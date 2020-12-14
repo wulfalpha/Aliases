@@ -1,0 +1,3 @@
+alias cll="clear && pwd"
+alias inst="sudo apt install"
+alias up="sudo apt update && sudo apt autoremove && sudo apt upgrade"
