@@ -1,3 +1,5 @@
 alias cll="clear && pwd"
-alias inst="sudo pacman -S"
-alias up="sudo pacman -Syu"
+alias inst="sudo apt install"
+alias up="sudo apt update && sudo apt autoremove && sudo apt upgrade"
+alias dis="sudo apt update && sudo apt dist-upgrade"
+alias pi="sudo raspi-config"
