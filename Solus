@@ -1,0 +1,3 @@
+alias cll="clear && pwd"
+alias up="sudo eopkg upgrade"
+alias inst="sudo eopkg"
