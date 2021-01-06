@@ -7,4 +7,5 @@ echo "before running me uncomment the proper command to use..."
 # sudo apt update && sudo apt autoremove && sudo apt upgrade Deb/ubuntu
 # sudo pamac update Manjaro
 # sudo pacman -Syu Arch
+# sudo yay -Syu AUR
 echo "Thanks for running this program!"
