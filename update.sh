@@ -2,7 +2,8 @@
 echo "Ready to update..."
 echo "press enter to continue..."
 pause
-echo "before running me uncomment the proper command to use..."
+echo "before running me uncomment the proper command to use... Press enter to Continue"
+pause
 # For solus:
 # sudo eopkg upgrade
 # For Debian/Ubuntu:
