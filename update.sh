@@ -11,6 +11,8 @@ echo "before running me uncomment the proper command to use..."
 # sudo pamac update
 # For Arch:
 # sudo pacman -Syu
-# AUR Update command with yay:
-# sudo yay -Syu
+# AUR Update command with yay (note yay is not recommended):
+# yay -Syu
+# AUR update command with paru (recomended):
+# paru -Syu
 echo "Thanks for running this program!"
