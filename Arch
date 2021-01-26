@@ -1,4 +1,3 @@
 alias cll="clear && pwd"
 alias inst="sudo pacman -S"
 alias up="sudo pacman -Syu"
-alias yup="sudo yay -Syu"
