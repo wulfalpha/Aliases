@@ -1,3 +1,6 @@
 alias cll="clear && pwd"
 alias inst="sudo pacman -S"
 alias up="sudo pacman -Syu"
+#recommended AUR helper is Paru as Yay was abandoned
+alias aup="paru -Syu"
+alias inp="paru -S"
