@@ -15,5 +15,5 @@ pause
 # AUR Update command with yay (note yay is not recommended):
 # yay -Syu
 # AUR update command with paru (recomended):
-# paru -Syu
+# paru
 echo "Thanks for running this program!"
