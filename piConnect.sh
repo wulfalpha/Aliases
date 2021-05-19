@@ -9,5 +9,5 @@ echo "Connecting to Raspberry Pi"
 # ssh version
 # ssh pi@ipaddr
 
-# mosh version
-# mosh pi@$ipaddr
+mosh version
+mosh pi@$ipaddr
