@@ -1,7 +1,7 @@
 #! /bin/bash
 echo "What is your ip address"
 
-read ipaddr
+read -r ipaddr
 
 echo "Connecting to Raspberry Pi"
 
