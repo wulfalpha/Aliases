@@ -6,9 +6,9 @@ read -r ipaddr
 
 echo "Connecting to Raspberry Pi..."
 
+clear && pwd
 # if you have Mosh installed (recommended) uncomment the mosh version. Otherwise uncomment the ssh version.
 # ssh version
 # ssh pi@ipaddr
-clear && pwd
-mosh version
+# mosh version
 mosh pi@"$ipaddr"
