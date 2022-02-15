@@ -1,5 +1,9 @@
 #! /bin/bash
 # Created by WulfAlpha with love!
+echo "What is the username for your pi?"
+
+read -r usename
+
 echo "What is your ip address?"
 
 read -r ipaddr
@@ -11,4 +15,4 @@ clear && pwd
 # ssh version
 # ssh pi@ipaddr
 # mosh version
-mosh pi@"$ipaddr"
+mosh "$usename"@"$ipaddr"
