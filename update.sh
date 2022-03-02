@@ -12,7 +12,7 @@ read -n1 -r -p "Press enter to continue..."
 # sudo pamac update
 # For Arch:
 # sudo pacman -Syu
-# AUR Update command with yay (note yay is not recommended):
+# AUR Update command with yay:
 # yay -Syu
 # AUR update command with paru (recomended):
 # paru
