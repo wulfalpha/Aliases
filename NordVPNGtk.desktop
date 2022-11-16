@@ -1,0 +1,12 @@
+[Desktop Entry]
+
+Type=Application
+Version=1.0
+Name=NordVPN(Gtk)
+Comment=NordVPN client application for connecting to recommended servers
+Path=/usr/share/NordPy
+Exec="nordvpnGtk"
+Icon=/usr/share/NordPy/media/nordvpn.png
+StartupWMClass=Gtk
+Terminal=false
+Categories=Internet;System;Utilities;
