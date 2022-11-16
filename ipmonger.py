@@ -19,7 +19,7 @@ class IPWindow(Gtk.Window):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_resizable(True)
         hostname = sock.gethostname()
-        frame1 = Gtk.Frame(label=f"{hostname}")
+        frame1 = Gtk.Frame(label=f"Hostname: {hostname}")
 
         grid1 = Gtk.Grid(row_spacing = 10, column_spacing = 10, column_homogeneous = True)
 
