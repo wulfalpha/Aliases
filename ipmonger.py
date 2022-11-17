@@ -42,7 +42,7 @@ class IPWindow(Gtk.Window):
         grid1.attach(label1,  0, 2, 3, 2)
         grid1.attach(label2,  0, 4, 3, 2)
         grid1.attach(label3,  0, 6, 3, 1)
-        grid1.attach(button_q, 2, 8, 1, 1)
+        grid1.attach(button_q, 1, 8, 1, 1)
 
         self.add(frame1)
         frame1.add(grid1)
