@@ -3,9 +3,11 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 import subprocess as sub
+from time import sleep
 
 
 set = ""
+switch = False
 
 
 class NordWindow(Gtk.Window):
@@ -18,6 +20,14 @@ class NordWindow(Gtk.Window):
         self.set_resizable(True)
 
         frame1 = Gtk.Frame(label="Nord Select")
+        nord = sub.check_output(["nordvpn", "status"]).decode()
+        for line in nord.split():
+            if "Disconnected" in line:
+                switch = True
+        if switch:
+            sub.call(["./notimin.sh"])
+        else:
+            sub.call(["./notifyier.sh"])
 
         grid1 = Gtk.Grid(row_spacing = 10, column_spacing = 10, column_homogeneous = True)
 
@@ -67,20 +77,28 @@ class NordWindow(Gtk.Window):
     def on_button_us_clicked(self, widget):
         sub.Popen("nordvpn connect us", shell=True)
         self.label3.set_text("US")
+        sleep(2)
+        sub.call(["./notifyier.sh"])
 
 
     def on_button_uk_clicked(self, widget):
         sub.Popen("nordvpn connect uk", shell=True)
         self.label3.set_text("UK")
+        sleep(2)
+        sub.call(["./notifyier.sh"])
 
     def on_button_jp_clicked(self, widget):
         sub.Popen("nordvpn connect jp", shell=True)
         self.label3.set_text("JP")
+        sleep(2)
+        sub.call(["./notifyier.sh"])
 
 
     def on_button_ex_clicked(self,widget):
         sub.Popen("nordvpn d", shell=True)
         self.label3.set_text("Disconnected")
+        sleep(2)
+        sub.call(["./notimin.sh"])
 
 
 win1 = NordWindow()
