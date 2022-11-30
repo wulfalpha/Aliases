@@ -6,10 +6,6 @@ import subprocess as sub
 from time import sleep
 
 
-set = ""
-switch = False
-
-
 class NordWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="Nord Select (Gtk)")
@@ -21,6 +17,7 @@ class NordWindow(Gtk.Window):
 
         frame1 = Gtk.Frame(label="Nord Select")
         nord = sub.check_output(["nordvpn", "status"]).decode()
+        switch = False
         for line in nord.split():
             if "Disconnected" in line:
                 switch = True
@@ -37,7 +34,6 @@ class NordWindow(Gtk.Window):
         label2 = Gtk.Label()
         self.label3 = Gtk.Label("None")
         self.label3.set_hexpand(True)
-        label4 = Gtk.Label()
 
         button_us = Gtk.Button(label="United States")
         button_us.set_hexpand(True)
