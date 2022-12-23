@@ -11,12 +11,12 @@ def greeting():
 
 def key():
     print("""
-    Possible flags:
-    -n, --Name - Name SSB
-    -u, --URL - URL for SSB
-    -c, --Category - Where to put SSB in Menu
-    -i, --Icon - Path to Icon for SSB
-    -p, --Path - for .desktop file for SSB
+   Usage: makewindow [options]
+    -n, --Name {name}          Name SSB
+    -u, --URL {url}            URL for SSB
+    -c, --Category {category}  Where to put SSB in Menu
+    -i, --Icon {path to icon}  Path to Icon for SSB
+    -p, --Path {path to place} .desktop file path for SSB
     """)
 
 

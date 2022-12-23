@@ -7,6 +7,12 @@ import argparse as qwarg
 
 
 parser = qwarg.ArgumentParser()
+def key():
+    print("""
+    Usage: pane [options]
+     -l, --Link {url}  Pass Pane a hyperlink
+     -h, --Help        This page
+    """)
 
 parser.add_argument("-l", "--Link", help = "pass Pane a hyperlink")
 
@@ -14,6 +20,8 @@ args = parser.parse_args()
 
 if args.Link:
     qrl = args.Link
+else:
+    key()
 
 app = QApplication(sys.argv)
 
