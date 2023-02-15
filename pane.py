@@ -3,10 +3,10 @@ import sys
 from PyQt5.Qt import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtWidgets import QApplication
-import argparse as qwarg
+import argparse
 
 
-parser = qwarg.ArgumentParser()
+parser = argparse.ArgumentParser()
 def key():
     print("""
     Usage: pane [options]
@@ -22,14 +22,26 @@ if args.Link:
     qrl = args.Link
 else:
     key()
+    qrl = "https://search.brave.com/"
+
+class Pane(QMainWindow):
+    def __init__(self, *args, **kwargs):
+        super(Pane, self).__init__(*args, **kwargs)
+
+        width = 1280
+        height = 720
+        self.setMinimumSize(width, height)
+
+        self.browser = QWebEngineView()
+        self.browser.load(QUrl(qrl))
+
+        self.setCentralWidget(self.browser)
+
+        self.show()
+
 
 app = QApplication(sys.argv)
+app.setApplicationName(f"{qrl} - Pane")
+window = Pane()
 
-web = QWebEngineView()
-
-web.load(QUrl(qrl))
-
-web.show()
-
-
-sys.exit(app.exec_())
+app.exec_()
