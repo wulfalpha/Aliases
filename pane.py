@@ -6,25 +6,8 @@ from PyQt5.QtWidgets import QApplication
 import argparse
 
 
-parser = argparse.ArgumentParser()
-def key():
-    print("""
-    Usage: pane [options]
-     -l, --Link {url}  Pass Pane a hyperlink
-     -h, --Help        This page
-    """)
-
-parser.add_argument("-l", "--Link", help = "pass Pane a hyperlink")
-
-args = parser.parse_args()
-
-if args.Link:
-    qrl = args.Link
-else:
-    key()
-    qrl = "https://search.brave.com/"
-
 class Pane(QMainWindow):
+    """Clas to build the Site specific Browser"""
     def __init__(self, *args, **kwargs):
         super(Pane, self).__init__(*args, **kwargs)
 
@@ -40,8 +23,21 @@ class Pane(QMainWindow):
         self.show()
 
 
-app = QApplication(sys.argv)
-app.setApplicationName(f"{qrl} - Pane")
-window = Pane()
+    def run(self):
+        print(self.qrl)
+        return 0
 
-app.exec_()
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--link", default="https://search.brave.com", help="hyperlink to access")
+    args = parser.parse_args()
+    qrl = args.link
+
+    app = QApplication(sys.argv)
+    app.setApplicationName(f"{qrl} - Pane")
+    window = Pane()
+
+    app.exec_()
