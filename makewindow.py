@@ -16,7 +16,6 @@ def key():
     -u, --URL {url}            URL for SSB
     -c, --Category {category}  Where to put SSB in Menu
     -i, --Icon {path to icon}  Path to Icon for SSB
-    -p, --Path {path to place} .desktop file path for SSB
     """)
 
 
@@ -26,9 +25,11 @@ parser.add_argument("-n", "--Name", help="Name your new SSB")
 parser.add_argument("-u", "--URL", help="URL for your SSB")
 parser.add_argument("-c", "--Category", help="Where to put your SSB")
 parser.add_argument("-i", "--Icon", help="path to icon")
-parser.add_argument("-p", "--Path", help="file Path")
+
 
 args = parser.parse_args()
+
+usr = os.environ["LOGNAME"]
 
 if args.Name:
     nym = args.Name
@@ -36,10 +37,10 @@ if args.Name:
         fb.write("[Desktop Entry]\n")
         fb.write("Version=1.0\n")
         fb.write(f"Name={nym}\n")
-        fb.write("Comment=pane minimal SSB\n")
+        fb.write("Comment=Pane minimal SSB\n")
         if args.URL:
             qrl = args.URL
-            fb.write(f"Exec=pane -l '{qrl}'\n")
+            fb.write(f"Exec=/home/{usr}/pane -l '{qrl}'\n")
         else:
             print("No url Passed!")
 
@@ -48,13 +49,9 @@ if args.Name:
             fb.write(f"Icon={ico}\n")
         else:
             print("No Icon Passed!")
-        if args.Path:
-            pth = args.Path
-            fb.write(f"Path={pth}\n")
-        else:
-            pth = "./local/share/applications/"
-            print(f"default path {pth} selected!")
-            fb.write("Path={pth}\n")
+        pth = f"/home/{usr}/.local/share/applications/"
+        print(f"Path is: {pth}.")
+        fb.write(f"Path={pth}\n")
         fb.write("Terminal=false\n")
         fb.write("Type=Application\n")
         if args.Category:
