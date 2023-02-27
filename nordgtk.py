@@ -136,8 +136,7 @@ class NordWindow(Gtk.Window):
         sub.call(["./notimin.sh"])
 
 
-if __name__ == __main__:
-    win1 = NordWindow()
-    win1.connect("destroy", Gtk.main_quit)
-    win1.show_all()
-    Gtk.main()
+win1 = NordWindow()
+win1.connect("destroy", Gtk.main_quit)
+win1.show_all()
+Gtk.main()
