@@ -40,36 +40,44 @@ class NordWindow(Gtk.Window):
         button_us = Gtk.Button(label="🇺🇸")
         button_us.set_hexpand(True)
         button_us.connect("clicked", self.on_button_us_clicked)
+        button_us.set_tooltip_text("United States")
 
 
         button_uk = Gtk.Button(label="🇬🇧")
         button_uk.set_hexpand(True)
         button_uk.connect("clicked", self.on_button_uk_clicked)
+        button_uk.set_tooltip_text("United Kingdom")
 
 
         button_jp = Gtk.Button(label="🇯🇵")
         button_jp.set_hexpand(True)
         button_jp.connect("clicked", self.on_button_jp_clicked)
+        button_jp.set_tooltip_text("Japan")
 
         button_mx = Gtk.Button(label="🇲🇽")
         button_mx.set_hexpand(True)
         button_mx.connect("clicked", self.on_button_mx_clicked)
+        button_mx.set_tooltip_text("Mexico")
 
         button_ca = Gtk.Button(label="🇨🇦")
         button_ca.set_hexpand(True)
         button_ca.connect("clicked", self.on_button_ca_clicked)
+        button_ca.set_tooltip_text("Canada")
 
         button_fn = Gtk.Button(label="🇫🇮")
         button_fn.set_hexpand(True)
         button_fn.connect("clicked", self.on_button_fn_clicked)
+        button_fn.set_tooltip_text("Finland")
 
         button_ex = Gtk.Button(label="⏼")
         button_ex.set_hexpand(True)
         button_ex.connect("clicked", self.on_button_ex_clicked)
+        button_ex.set_tooltip_text("Disconnect")
 
         button_q = Gtk.Button(label="Quit")
         button_q.set_hexpand(True)
         button_q.connect("clicked", Gtk.main_quit)
+        button_q.set_tooltip_text("Quit")
 
         grid1.attach(label1,  0, 2, 3, 2)
         grid1.attach(label2,  0, 4, 3, 2)
