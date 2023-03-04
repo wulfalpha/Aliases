@@ -7,6 +7,7 @@ from functools import partial
 
 
 class PepUpWindow(Gtk.Window):
+    """Window update class."""
     def __init__(self):
         super().__init__(title="Peppermint Update (GTK)")
 
@@ -22,7 +23,7 @@ class PepUpWindow(Gtk.Window):
         label1 = Gtk.Label(label="Updates:")
         label1.set_hexpand(True)
 
-        self.label2 = Gtk.Label(label="Checking for updates...")
+        self.label2 = Gtk.Label(label="Ready...")
         self.label2.set_hexpand(True)
         self.label2.set_vexpand(True)
 
@@ -53,7 +54,7 @@ class PepUpWindow(Gtk.Window):
 
 
     def on_button_updates_clicked(self, widget):
-        up_count = 0
+        """Button to check for updates"""
         updates = sub.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=sub.PIPE).stdout.decode("utf-8").strip()
         if updates == "0":
             self.label2.set_text("Your system is up-to-date.")
@@ -63,7 +64,8 @@ class PepUpWindow(Gtk.Window):
             self.button_upgrade.set_sensitive(True)
 
     def on_button_upgrade_clicked(self, widget):
-        sub.run("nala upgrade -y", shell=True, stdout=devnull)
+        """Button for upgrade. Unlocked only when updates are available."""
+        sub.run("nala upgrade -y", shell=True)
         self.label2.set_text("Update Complete!")
 
 
