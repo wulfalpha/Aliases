@@ -28,6 +28,7 @@ class PepUpWindow(Gtk.Window):
         self.label2.set_hexpand(True)
         self.label2.set_vexpand(True)
 
+
         button_updates = Gtk.Button(label="Check for updates.")
         button_updates.set_hexpand(True)
         button_updates.connect("clicked", self.on_button_updates_clicked)
@@ -67,6 +68,7 @@ class PepUpWindow(Gtk.Window):
         else:
             self.label2.set_text(f"There are {updates} updates available.")
             self.button_upgrade.set_sensitive(True)
+
 
     def on_button_upgrade_clicked(self, widget):
         """Button for upgrade. Unlocked only when updates are available."""
