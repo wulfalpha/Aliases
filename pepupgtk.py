@@ -58,11 +58,15 @@ class PepUpWindow(Gtk.Window):
     def on_button_updates_clicked(self, widget):
         """Button to check for updates"""
         s.run("apt-get -q update", shell=True)
+        try:
+            updates = int(updates)
+        except ValueError:
+            print("cant get Number of Updates!")
         updates = s.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=s.PIPE).stdout.decode("utf-8").strip()
-        if int(updates) == 0:
+        if updates == 0:
             self.label2.set_text("Your system is up-to-date.")
             self.button_upgrade.set_sensitive(False)
-        elif int(updates) == 1:
+        elif updates == 1:
             self.label2.set_text(f"There is one update available.")
             self.button_upgrade.set_sensitive(True)
         else:
