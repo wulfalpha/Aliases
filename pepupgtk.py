@@ -2,8 +2,9 @@
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
-import subprocess as sub
+import subprocess as s
 from functools import partial
+import apt
 
 
 class PepUpWindow(Gtk.Window):
@@ -55,17 +56,21 @@ class PepUpWindow(Gtk.Window):
 
     def on_button_updates_clicked(self, widget):
         """Button to check for updates"""
-        updates = sub.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=sub.PIPE).stdout.decode("utf-8").strip()
+        s.run("apt-get -q update", shell=True)
+        updates = s.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=s.PIPE).stdout.decode("utf-8").strip()
         if updates == "0":
             self.label2.set_text("Your system is up-to-date.")
             self.button_upgrade.set_sensitive(False)
+        if updates == "1":
+            self.label2.set_tet(f"There is one update available.")
+            self.button_upgrade.set_sensitive(True)
         else:
             self.label2.set_text(f"There are {updates} updates available.")
             self.button_upgrade.set_sensitive(True)
 
     def on_button_upgrade_clicked(self, widget):
         """Button for upgrade. Unlocked only when updates are available."""
-        sub.run("nala upgrade -y", shell=True)
+        s.run("nala upgrade -y", shell=True)
         self.label2.set_text("Update Complete!")
 
 
