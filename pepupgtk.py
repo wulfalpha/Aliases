@@ -61,8 +61,8 @@ class PepUpWindow(Gtk.Window):
         if updates == "0":
             self.label2.set_text("Your system is up-to-date.")
             self.button_upgrade.set_sensitive(False)
-        if updates == "1":
-            self.label2.set_tet(f"There is one update available.")
+        elif updates == "1":
+            self.label2.set_text(f"There is one update available.")
             self.button_upgrade.set_sensitive(True)
         else:
             self.label2.set_text(f"There are {updates} updates available.")
