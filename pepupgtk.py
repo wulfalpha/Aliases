@@ -29,16 +29,16 @@ class PepUpWindow(Gtk.Window):
         self.label2.set_vexpand(True)
 
 
-        button_updates = Gtk.Button(label="Check for updates.")
+        button_updates = Gtk.Button(label="Check for updates")
         button_updates.set_hexpand(True)
         button_updates.connect("clicked", self.on_button_updates_clicked)
-        button_updates.set_tooltip_text("apt-get update")
+        button_updates.set_tooltip_text("apt update")
 
-        self.button_upgrade = Gtk.Button(label="Install Updates.")
+        self.button_upgrade = Gtk.Button(label="Install Updates")
         self.button_upgrade.set_hexpand(True)
         self.button_upgrade.set_sensitive(False)
         self.button_upgrade.connect("clicked", self.on_button_upgrade_clicked)
-        self.button_upgrade.set_tooltip_text("apt-get upgrade")
+        self.button_upgrade.set_tooltip_text("apt upgrade")
 
         button_q = Gtk.Button(label="Quit")
         button_q.set_hexpand(True)
