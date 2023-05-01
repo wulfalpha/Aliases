@@ -1,33 +1,29 @@
 #!/usr/bin/env python3
 import sys
-from PyQt5.Qt import *
-from PyQt5.QtWebEngineWidgets import *
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QUrl
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWidgets import QApplication, QMainWindow
 import argparse
 
 
 class Pane(QMainWindow):
-    """Clas to build the Site specific Browser"""
-    def __init__(self, *args, **kwargs):
-        super(Pane, self).__init__(*args, **kwargs)
+    """Class to build the Site specific Browser"""
+    def __init__(self, qrl):
+        super(Pane, self).__init__()
 
-        width = 1280
-        height = 720
-        self.setMinimumSize(width, height)
+        self.setMinimumSize(1280, 720)
+        self.setWindowIcon(QIcon('hidive.png'))
+        self.setWindowTitle(f"{qrl} - Pane")
 
         self.browser = QWebEngineView()
-        self.browser.load(QUrl(qrl))
+        try:
+            self.browser.load(QUrl(qrl))
+        except Exception as e:
+            print(e)
 
         self.setCentralWidget(self.browser)
-
         self.show()
-
-
-    def run(self):
-        print(self.qrl)
-        return 0
-
-
 
 
 if __name__ == '__main__':
@@ -38,6 +34,6 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
     app.setApplicationName(f"{qrl} - Pane")
-    window = Pane()
+    window = Pane(qrl)
 
     app.exec_()

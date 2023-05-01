@@ -34,7 +34,7 @@ class NordWindow(Gtk.Window):
             status = "Disconnected"
 
         label2 = Gtk.Label()
-        self.label3 = Gtk.Label(status)
+        self.label3 = Gtk.Label(label=status)
         self.label3.set_hexpand(True)
 
         button_us = Gtk.Button(label="🇺🇸")
