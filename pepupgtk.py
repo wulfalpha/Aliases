@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import gi
+
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 import subprocess as s
@@ -9,6 +10,7 @@ import apt
 
 class PepUpWindow(Gtk.Window):
     """Window update class."""
+
     def __init__(self):
         super().__init__(title="Peppermint Update (GTK)")
 
@@ -19,15 +21,14 @@ class PepUpWindow(Gtk.Window):
 
         frame1 = Gtk.Frame(label="Peppermint Update")
 
-        grid1 = Gtk.Grid(row_spacing = 10, column_spacing = 10, column_homogeneous = True)
+        grid1 = Gtk.Grid(row_spacing=10, column_spacing=10, column_homogeneous=True)
 
-        label1 = Gtk.Label(label="Updates:")
-        label1.set_hexpand(True)
+        self.label1 = Gtk.Label(label="Updates: Ready...")
+        self.label1.set_hexpand(True)
 
-        self.label2 = Gtk.Label(label="Ready...")
-        self.label2.set_hexpand(True)
-        self.label2.set_vexpand(True)
-
+        self.spinner = Gtk.Spinner()
+        self.spinner.set_hexpand(True)
+        self.spinner.set_vexpand(True)
 
         button_updates = Gtk.Button(label="Check for updates")
         button_updates.set_hexpand(True)
@@ -45,8 +46,8 @@ class PepUpWindow(Gtk.Window):
         button_q.connect("clicked", Gtk.main_quit)
         button_q.set_tooltip_text("Quit")
 
-        grid1.attach(label1, 0, 2, 3, 2)
-        grid1.attach(self.label2, 0, 4, 3, 2)
+        grid1.attach(self.label1, 0, 2, 3, 2)
+        grid1.attach(self.spinner, 0, 4, 3, 2)
         grid1.attach(button_updates, 0, 8, 1, 1)
         grid1.attach(self.button_upgrade, 1, 8, 1, 1)
         grid1.attach(button_q, 2, 8, 1, 1)
@@ -54,30 +55,42 @@ class PepUpWindow(Gtk.Window):
         self.add(frame1)
         frame1.add(grid1)
 
-
     def on_button_updates_clicked(self, widget):
         """Button to check for updates"""
+        self.spinner.start()
+        self.label1.set_text("Updates: Checking...")
         s.run("apt-get -q update", shell=True)
-        updates = s.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=s.PIPE).stdout.decode("utf-8").strip()
+        updates = (
+            s.run(
+                "apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l",
+                shell=True,
+                stdout=s.PIPE,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
         try:
             updates = int(updates)
         except ValueError:
             print("cant get Number of Updates!")
         if updates == 0:
-            self.label2.set_text("Your system is up-to-date.")
+            self.label1.set_text("Updates: Your system is up-to-date.")
             self.button_upgrade.set_sensitive(False)
         elif updates == 1:
-            self.label2.set_text(f"There is one update available.")
+            self.label1.set_text("Updates: There is one update available.")
             self.button_upgrade.set_sensitive(True)
         else:
-            self.label2.set_text(f"There are {updates} updates available.")
+            self.label1.set_text(f"Updates: There are {updates} updates available.")
             self.button_upgrade.set_sensitive(True)
-
+        self.spinner.stop()
 
     def on_button_upgrade_clicked(self, widget):
         """Button for upgrade. Unlocked only when updates are available."""
+        self.spinner.start()
+        self.label1.set_text("Updates: Updating...")
         s.run("nala upgrade -y", shell=True)
-        self.label2.set_text("Update Complete!")
+        self.label1.set_text("Updates: Update Complete!")
+        self.spinner.stop()
 
 
 win1 = PepUpWindow()
