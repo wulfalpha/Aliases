@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import gi
+import os
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib
@@ -86,8 +87,12 @@ class RedditWindow(Gtk.Window):
     def fetch_reddit(self):
         """Method to fetch reddits from list."""
         count = 10
-        file_path = "/home/wulfalpha/Pictures/reddits"
+        base_path = "/home/wulfalpha/Pictures/"
         reddit_list = self.on_source_combo_changed(self.combo)
+        dir_name = reddit_list.split(".")[
+            0
+        ]  # Removes the '.txt' from the dropdown item
+        file_path = base_path + dir_name
         with open(reddit_list, "r") as stream:
             total_reddits = sum(1 for _ in stream)  # Count total number of reddits
             stream.seek(0)  # Reset file pointer to the beginning
