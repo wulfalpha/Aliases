@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import gi
 import subprocess as s
-import threading
-from gi.repository import GLib, Gtk
 
 gi.require_version("Gtk", "3.0")
+import threading
+from gi.repository import GLib, Gtk
 
 
 class PepUpWindow(Gtk.Window):
