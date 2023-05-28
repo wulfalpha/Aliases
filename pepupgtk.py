@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import gi
+from subprocess import run
+import threading
+from gi.repository import GLib, Gtk
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
-import subprocess as s
-from functools import partial
 
 
 class PepUpWindow(Gtk.Window):
@@ -54,17 +54,41 @@ class PepUpWindow(Gtk.Window):
         self.add(frame1)
         frame1.add(grid1)
 
-
     def on_button_updates_clicked(self, widget):
         """Button to check for updates"""
         self.spinner.start()
         self.label1.set_text("Updates: Checking...")
-        s.run("apt-get -q update", shell=True)
-        updates = s.run("apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l", shell=True, stdout=s.PIPE).stdout.decode("utf-8").strip()
+        threading.Thread(target=self.run_update_check).start()
+
+    def run_update_check(self):
+        update_process = run("apt-get -q update", shell=True)
+        if update_process.returncode != 0:
+            GLib.idle_add(self.show_error, "Unable to check for updates")
+            return
+
+        updates_process = run(
+            "apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l",
+            shell=True,
+            stdout=s.PIPE,
+        )
+        if updates_process.returncode != 0:
+            GLib.idle_add(self.show_error, "Unable to count updates")
+            return
+
+        updates = updates_process.stdout.decode("utf-8").strip()
         try:
             updates = int(updates)
         except ValueError:
-            print("cant get Number of Updates!")
+            GLib.idle_add(self.show_error, "Unable to parse update count")
+            return
+
+        GLib.idle_add(self.update_results, updates)
+
+    def show_error(self, message):
+        self.label1.set_text(f"Error: {message}")
+        self.spinner.stop()
+
+    def update_results(self, updates):
         if updates == 0:
             self.label1.set_text("Updates: Your system is up-to-date.")
             self.button_upgrade.set_sensitive(False)
@@ -80,7 +104,16 @@ class PepUpWindow(Gtk.Window):
         """Button for upgrade. Unlocked only when updates are available."""
         self.spinner.start()
         self.label1.set_text("Updates: Updating...")
-        s.run("nala upgrade -y", shell=True)
+        threading.Thread(target=self.run_upgrade).start()
+
+    def run_upgrade(self):
+        upgrade_process = run("nala upgrade -y", shell=True)
+        if upgrade_process.returncode != 0:
+            GLib.idle_add(self.show_error, "Unable to perform upgrade")
+            return
+        GLib.idle_add(self.update_after_upgrade)
+
+    def update_after_upgrade(self):
         self.label1.set_text("Updates: Update Complete!")
         self.spinner.stop()
 
