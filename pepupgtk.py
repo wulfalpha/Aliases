@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import gi
-from subprocess import run
+from subprocess import run, PIPE
 import threading
 from gi.repository import GLib, Gtk
 
@@ -69,7 +69,7 @@ class PepUpWindow(Gtk.Window):
         updates_process = run(
             "apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l",
             shell=True,
-            stdout=s.PIPE,
+            stdout=PIPE,
         )
         if updates_process.returncode != 0:
             GLib.idle_add(self.show_error, "Unable to count updates")
