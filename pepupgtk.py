@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import gi
-from subprocess import run, PIPE
+import subprocess as s
 import threading
 from gi.repository import GLib, Gtk
 
@@ -61,15 +61,15 @@ class PepUpWindow(Gtk.Window):
         threading.Thread(target=self.run_update_check).start()
 
     def run_update_check(self):
-        update_process = run("apt-get -q update", shell=True)
+        update_process = s.run("apt-get -q update", shell=True)
         if update_process.returncode != 0:
             GLib.idle_add(self.show_error, "Unable to check for updates")
             return
 
-        updates_process = run(
+        updates_process = s.run(
             "apt-get -q -y --ignore-hold --allow-change-held-packages --allow-unauthenticated -s dist-upgrade | /bin/grep  ^Inst | wc -l",
             shell=True,
-            stdout=PIPE,
+            stdout=s.PIPE,
         )
         if updates_process.returncode != 0:
             GLib.idle_add(self.show_error, "Unable to count updates")
@@ -107,7 +107,7 @@ class PepUpWindow(Gtk.Window):
         threading.Thread(target=self.run_upgrade).start()
 
     def run_upgrade(self):
-        upgrade_process = run("nala upgrade -y", shell=True)
+        upgrade_process = s.run("nala upgrade -y", shell=True)
         if upgrade_process.returncode != 0:
             GLib.idle_add(self.show_error, "Unable to perform upgrade")
             return
