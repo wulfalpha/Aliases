@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 clear
 IP_Log="iplog.txt"
 # If a previous log file exists, delete it.
