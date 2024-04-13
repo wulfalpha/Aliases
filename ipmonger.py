@@ -1,56 +1,67 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import gi
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
 import subprocess as sub
 import socket as sock
 import sys
 
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
 
-set = ""
+
+def get_ip_address():
+    try:
+        return (
+            sub.check_output(
+                "ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1 -d'/'",
+                shell=True,
+            )
+            .decode(sys.stdout.encoding)
+            .strip()
+        )
+    except sub.CalledProcessError:
+        return "Error retrieving IP"
 
 
 class IPWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="IP Monger")
+        self.configure_window()
+        self.create_widgets()
 
+    def configure_window(self):
         self.set_border_width(10)
         self.set_default_size(640, 200)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_resizable(True)
+
+    def create_widgets(self):
         hostname = sock.gethostname()
-        frame1 = Gtk.Frame(label=f"Hostname: {hostname}")
+        frame = Gtk.Frame(label=f"Hostname: {hostname}")
+        grid = Gtk.Grid(row_spacing=10, column_spacing=10, column_homogeneous=True)
 
-        grid1 = Gtk.Grid(row_spacing = 10, column_spacing = 10, column_homogeneous = True)
+        ip_address = get_ip_address()
 
+        ip_address_label = Gtk.Label(label="IP Address:")
+        ip_address_label.set_hexpand(True)
 
-        ipAddr = sub.check_output("ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1 -d'/'", shell=True).decode(sys.stdout.encoding).strip()
+        ip_value_label = Gtk.Label()
+        ip_value_label.set_text(ip_address)
+        ip_value_label.set_hexpand(True)
 
-        label1 = Gtk.Label(label="IP Address:")
-        label1.set_hexpand(True)
+        quit_button = Gtk.Button(label="Quit")
+        quit_button.set_hexpand(True)
+        quit_button.connect("clicked", Gtk.main_quit)
 
-        label2 = Gtk.Label()
-        label3 = Gtk.Label()
-        label3.set_text(ipAddr)
-        label3.set_hexpand(True)
+        grid.attach(ip_address_label, 0, 2, 3, 2)
+        grid.attach(ip_value_label, 0, 4, 3, 2)
+        grid.attach(quit_button, 1, 8, 1, 1)
 
-
-        button_q = Gtk.Button(label="Quit")
-        button_q.set_hexpand(True)
-        button_q.connect("clicked", Gtk.main_quit)
-
-        grid1.attach(label1,  0, 2, 3, 2)
-        grid1.attach(label2,  0, 4, 3, 2)
-        grid1.attach(label3,  0, 6, 3, 1)
-        grid1.attach(button_q, 1, 8, 1, 1)
-
-        self.add(frame1)
-        frame1.add(grid1)
+        self.add(frame)
+        frame.add(grid)
 
 
-win1 = IPWindow()
-
-win1.connect("destroy", Gtk.main_quit)
-
-win1.show_all()
-Gtk.main()
+if __name__ == "__main__":
+    win = IPWindow()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
