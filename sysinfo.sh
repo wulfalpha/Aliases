@@ -1,5 +1,19 @@
 #!/bin/bash
 
+export NEWT_COLORS="
+root=,red
+window=,black
+shadow=,red
+border=blue,black
+title=blue,black
+textbox=blue,black
+radiolist=black,black
+label=black,red
+checkbox=black,red
+compactbutton=black,red
+button=black,red"
+
+
 # Function to display OS information
 show_os_info() {
     # Get all relevant neofetch information at once
