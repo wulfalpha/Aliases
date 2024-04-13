@@ -21,6 +21,7 @@ show_os_info() {
     
     # Parse each piece of information
     OS=$(echo "$info" | grep "OS:" | cut -f2 -d':')
+    Host=$(echo "$info" | grep "Host:" | cut -f2 -d':')
     Kernel=$(echo "$info" | grep "Kernel:" | cut -f2 -d':')
     Uptime=$(echo "$info" | grep "Uptime:" | cut -f2 -d':')
     Packages=$(echo "$info" | grep "Packages:" | cut -f2 -d':')
@@ -32,7 +33,7 @@ show_os_info() {
     Distro=$(echo "$info" | grep "Distro:" | cut -f2 -d':')
     
     # Create the os_info variable, formatting each piece of information on a new line
-    os_info="OS: $OS\nKernel: $Kernel\nUptime: $Uptime\nPackages: $Packages\nShell: $Shell\nDE: $DE\nWM: $WM\nCPU: $CPU\nGPU: $GPU\nDistro: $Distro"
+    os_info="OS: $OS\nHost: $Host\nKernel: $Kernel\nUptime: $Uptime\nPackages: $Packages\nShell: $Shell\nDE: $DE\nWM: $WM\nCPU: $CPU\nGPU: $GPU\nDistro: $Distro"
     
     # Display the info in a window
     whiptail --title "OS Information" --msgbox "$os_info" 20 78
