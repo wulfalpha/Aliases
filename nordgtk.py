@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import gi
+
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk
+import yaml
+import os
 import subprocess as sub
 from time import sleep
 
@@ -9,142 +13,120 @@ from time import sleep
 class NordWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="Nord Select (Gtk)")
-
         self.set_border_width(10)
         self.set_default_size(640, 200)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_resizable(True)
 
-        frame1 = Gtk.Frame(label="Nord Select")
-        nord = sub.check_output(["nordvpn", "status"]).decode()
-        switch = False
-        if "Disconnected" in nord:
-            sub.call(["./notimin.sh"])
-        else:
-            sub.call(["./notifyier.sh"])
+        self.buttons = {}
+        self.server_codes = {}
 
-        grid1 = Gtk.Grid(row_spacing = 10, column_spacing = 10, column_homogeneous = True)
+        frame1 = Gtk.Frame(label="Nord Select")
+        grid1 = Gtk.Grid(row_spacing=10, column_spacing=10, column_homogeneous=True)
 
         label1 = Gtk.Label(label="Select a server Below.")
         label1.set_hexpand(True)
 
-        if "Connected" in nord:
-            status = "Connected"
-        else:
-            status = "Disconnected"
-
-        label2 = Gtk.Label()
-        self.label3 = Gtk.Label(label=status)
+        self.label3 = Gtk.Label(label="")
         self.label3.set_hexpand(True)
 
-        button_us = Gtk.Button(label="🇺🇸")
-        button_us.set_hexpand(True)
-        button_us.connect("clicked", self.on_button_us_clicked)
-        button_us.set_tooltip_text("United States")
+        grid1.attach(label1, 0, 0, 3, 1)
+        grid1.attach(self.label3, 0, 1, 3, 1)
 
+        # Load servers from YAML file
+        config_path = os.path.expanduser("~/.config/nordselect/config.yaml")
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
 
-        button_uk = Gtk.Button(label="🇬🇧")
-        button_uk.set_hexpand(True)
-        button_uk.connect("clicked", self.on_button_uk_clicked)
-        button_uk.set_tooltip_text("United Kingdom")
+        row = 0
+        for server in config["servers"]:
+            emoji = server["emoji"]
+            code = server["code"]
+            name = server["name"].lower()
+            button = self.create_button(emoji, code, name)
+            self.server_codes[name] = code
+            grid1.attach(button, row % 3, row // 3 + 2, 1, 1)  # Adjusted the row index
+            row += 1
 
-
-        button_jp = Gtk.Button(label="🇯🇵")
-        button_jp.set_hexpand(True)
-        button_jp.connect("clicked", self.on_button_jp_clicked)
-        button_jp.set_tooltip_text("Japan")
-
-        button_mx = Gtk.Button(label="🇲🇽")
-        button_mx.set_hexpand(True)
-        button_mx.connect("clicked", self.on_button_mx_clicked)
-        button_mx.set_tooltip_text("Mexico")
-
-        button_ca = Gtk.Button(label="🇨🇦")
-        button_ca.set_hexpand(True)
-        button_ca.connect("clicked", self.on_button_ca_clicked)
-        button_ca.set_tooltip_text("Canada")
-
-        button_fn = Gtk.Button(label="🇫🇮")
-        button_fn.set_hexpand(True)
-        button_fn.connect("clicked", self.on_button_fn_clicked)
-        button_fn.set_tooltip_text("Finland")
-
-        button_ex = Gtk.Button(label="⏼")
-        button_ex.set_hexpand(True)
-        button_ex.connect("clicked", self.on_button_ex_clicked)
-        button_ex.set_tooltip_text("Disconnect")
+        button_ex = self.create_button("⏼", "disconnect", "disconnect")
+        grid1.attach(button_ex, row % 3, row // 3 + 2, 1, 1)  # Adjusted the row index
 
         button_q = Gtk.Button(label="Quit")
-        button_q.set_hexpand(True)
         button_q.connect("clicked", Gtk.main_quit)
         button_q.set_tooltip_text("Quit")
+        grid1.attach(
+            button_q, (row + 1) % 3, (row + 1) // 3 + 2, 1, 1
+        )  # Adjusted the row index
 
-        grid1.attach(label1,  0, 2, 3, 2)
-        grid1.attach(label2,  0, 4, 3, 2)
-        grid1.attach(self.label3,  0, 6, 3, 1)
-        grid1.attach(button_us, 0, 7, 1, 1)
-        grid1.attach(button_uk, 1, 7, 1, 1)
-        grid1.attach(button_jp, 2, 7, 1, 1)
-        grid1.attach(button_mx, 0, 8, 1, 1)
-        grid1.attach(button_ca, 1, 8, 1, 1)
-        grid1.attach(button_fn, 2, 8, 1, 1)
-        grid1.attach(button_ex, 0, 9, 1, 1)
-        grid1.attach(button_q, 2, 9, 1, 1)
-
-        self.add(frame1)
         frame1.add(grid1)
+        self.add(frame1)
+        self.show_all()
 
+        # Update button colors initially
+        self.update_button_colors()
 
-    def on_button_us_clicked(self, widget):
-        sub.Popen("nordvpn connect us", shell=True)
-        self.label3.set_text("US")
+    def get_vpn_status(self):
+        try:
+            nord = sub.check_output(["nordvpn", "status"]).decode()
+            if "Connected" in nord:
+                for line in nord.splitlines():
+                    if line.startswith("Country:"):
+                        country = line.split(":")[1].strip().lower()
+                        return country
+            return "disconnected"
+        except sub.CalledProcessError:
+            return "disconnected"
+
+    def create_button(self, label, code, name):
+        button = Gtk.Button(label=label)
+        button.set_hexpand(True)
+        button.connect("clicked", self.on_button_clicked, code)
+        button.set_tooltip_text(name.capitalize())
+        self.buttons[name] = button
+        return button
+
+    def on_button_clicked(self, widget, code):
+        if code != "disconnect":
+            sub.Popen(["nordvpn", "connect", code])
+        else:
+            sub.Popen(["nordvpn", "disconnect"])
         sleep(1.5)
-        sub.call(["./notifyier.sh"])
+        self.current_status = self.get_vpn_status()
+        self.label3.set_text(
+            self.current_status.capitalize()
+            if self.current_status != "disconnected"
+            else "Disconnected"
+        )
+        self.update_button_colors()
+
+    def update_button_colors(self):
+        current_status = self.get_vpn_status()
+        for name, button in self.buttons.items():
+            if name == "disconnect":
+                continue
+            if current_status == name:
+                button.get_style_context().remove_class("disconnected")
+                button.get_style_context().add_class("connected")
+            else:
+                button.get_style_context().remove_class("connected")
+                button.get_style_context().add_class("disconnected")
+
+        css = b"""
+        button.connected {
+            background: green;
+        }
+        button.disconnected {
+            background: red;
+        }
+        """
+        css_provider = Gtk.CssProvider()
+        css_provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
+        )
 
 
-    def on_button_uk_clicked(self, widget):
-        sub.Popen("nordvpn connect uk", shell=True)
-        self.label3.set_text("UK")
-        sleep(1.5)
-        sub.call(["./notifyier.sh"])
-
-
-    def on_button_jp_clicked(self, widget):
-        sub.Popen("nordvpn connect jp", shell=True)
-        self.label3.set_text("Japan")
-        sleep(1.5)
-        sub.call(["./notifyier.sh"])
-
-
-    def on_button_mx_clicked(self, widget):
-        sub.Popen("nordvpn connect mexico", shell=True)
-        self.label3.set_text("Mexico")
-        sleep(1.5)
-        sub.call(["./notifyier.sh"])
-
-
-    def on_button_ca_clicked(self, widget):
-        sub.Popen("nordvpn connect ca", shell=True)
-        self.label3.set_text("Canada")
-        sleep(1.5)
-        sub.call(["./notifyier.sh"])
-
-
-    def on_button_fn_clicked(self, widget):
-        sub.Popen("nordvpn connect finland", shell=True)
-        self.label3.set_text("Finland")
-        sleep(1.5)
-        sub.call(["./notifyier.sh"])
-
-
-    def on_button_ex_clicked(self,widget):
-        sub.Popen("nordvpn d", shell=True)
-        self.label3.set_text("Disconnected")
-        sleep(1)
-        sub.call(["./notimin.sh"])
-
-
-win1 = NordWindow()
-win1.connect("destroy", Gtk.main_quit)
-win1.show_all()
-Gtk.main()
+if __name__ == "__main__":
+    win1 = NordWindow()
+    win1.connect("destroy", Gtk.main_quit)
+    Gtk.main()
