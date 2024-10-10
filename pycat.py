@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
+""" 
+Print cat face and pawprint pattern to stdout
+Takes nothing.
+"""
 from random import randint
 
 
 def generate_pawprint_pattern():
+    """
+    Generates pattern
+    Takes nothing.
+    Returns a string"""
     # Define the size of the grid
     rows, cols = 10, 40
 
@@ -25,6 +33,11 @@ def generate_pawprint_pattern():
 
 
 def print_cat_with_pawprints():
+    """
+    prints the cat with pawprints
+    Takes nothing
+    returns nothing
+    """
     pawprint_pattern = generate_pawprint_pattern()
     cat_face = "*ฅ^•ﻌ•^ฅ*"
 
