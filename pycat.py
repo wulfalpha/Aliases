@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import random
+from random import randint
 
 
 def generate_pawprint_pattern():
@@ -14,8 +14,8 @@ def generate_pawprint_pattern():
 
     # Randomly place pawprints on the grid
     for _ in range(num_pawprints):
-        row = random.randint(0, rows - 2)
-        col = random.randint(0, cols - 2)
+        row = randint(0, rows - 2)
+        col = randint(0, cols - 2)
         grid[row][col] = "🐾"
 
     # Convert grid to string for printing
