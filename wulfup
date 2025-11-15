@@ -1,0 +1,560 @@
+#!/usr/bin/env bash
+
+# wulfup - A transparent system updater for Arch-based distributions
+# Handles keyrings, lock files, AUR helpers, and package maintenance
+
+set -euo pipefail
+
+progname="${0##*/}"
+VERSION="1.0.0"
+
+# Color definitions
+if [[ -t 2 ]]; then
+    RED='\e[0;31m'
+    GREEN='\e[0;32m'
+    YELLOW='\e[0;33m'
+    BLUE='\e[0;34m'
+    CYAN='\e[0;36m'
+    BOLD='\e[1m'
+    RESET='\e[0m'
+else
+    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' RESET=''
+fi
+
+# Paths
+LOCK_FILE="/var/lib/pacman/db.lck"
+PACMAN_CONF="/etc/pacman.conf"
+
+# Default settings
+MIN_FREE_BYTES=$((1000 * 1000 * 1000))  # 1GB
+CACHE_LIMIT=""
+AUR_HELPER=""
+RUN_PACDIFF="no"
+RUN_SYNC="yes"
+UPDATE_KEYRINGS="yes"
+RUN_OTHER_UPDATES="no"
+
+# Supported keyrings
+KEYRINGS=(
+    "archlinux-keyring"
+    # "cachyos-keyring"
+    "chaotic-keyring"
+    "endeavouros-keyring"
+    "rebornos-keyring"
+)
+
+#==============================================================================
+# Output functions
+#==============================================================================
+
+info() {
+    echo -e "${BLUE}${BOLD}==>${RESET} ${BOLD}$*${RESET}" >&2
+}
+
+success() {
+    echo -e "${GREEN}${BOLD}==>${RESET} ${GREEN}$*${RESET}" >&2
+}
+
+warn() {
+    echo -e "${YELLOW}${BOLD}==> WARNING:${RESET} ${YELLOW}$*${RESET}" >&2
+}
+
+error() {
+    echo -e "${RED}${BOLD}==> ERROR:${RESET} ${RED}$*${RESET}" >&2
+}
+
+die() {
+    error "$*"
+    exit 1
+}
+
+step() {
+    echo -e "${CYAN}${BOLD}::${RESET} $*" >&2
+}
+
+#==============================================================================
+# Command execution - shows command before running
+#==============================================================================
+
+run_cmd() {
+    echo -e "${GREEN}${BOLD}\$${RESET} $*" >&2
+    "$@"
+}
+
+run_sudo() {
+    echo -e "${GREEN}${BOLD}\$ sudo${RESET} $*" >&2
+    sudo "$@"
+}
+
+#==============================================================================
+# Helper detection
+#==============================================================================
+
+detect_aur_helper() {
+    local helpers=(paru yay)
+
+    for helper in "${helpers[@]}"; do
+        if command -v "$helper" &>/dev/null; then
+            AUR_HELPER="$helper"
+            return 0
+        fi
+    done
+
+    AUR_HELPER="pacman"
+    return 1
+}
+
+#==============================================================================
+# Lock file handling
+#==============================================================================
+
+check_lock_file() {
+    step "Checking for pacman lock file..."
+
+    if [[ -e "$LOCK_FILE" ]]; then
+        if sudo fuser "$LOCK_FILE" &>/dev/null; then
+            die "Lock file $LOCK_FILE is in use by another process.\nAnother package manager may be running."
+        else
+            warn "Found stale lock file: $LOCK_FILE"
+            echo -e "${BOLD}This likely means pacman was interrupted previously.${RESET}" >&2
+            read -p "Remove it? [Y/n] " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+                run_sudo rm -f "$LOCK_FILE"
+                success "Lock file removed"
+            else
+                die "Cannot proceed with lock file present"
+            fi
+        fi
+    else
+        success "No lock file found"
+    fi
+}
+
+#==============================================================================
+# Disk space checking
+#==============================================================================
+
+check_disk_space() {
+    step "Checking disk space..."
+
+    local available
+    available=$(findmnt / -nbo avail)
+    local available_gb=$((available / 1000 / 1000 / 1000))
+
+    info "Available space on /: ${available_gb}GB"
+
+    if [[ $available -lt $MIN_FREE_BYTES ]]; then
+        warn "Low disk space! Less than 1GB available on root partition."
+
+        local cache_size
+        cache_size=$(du -sb /var/cache/pacman/pkg 2>/dev/null | awk '{print $1}')
+        local cache_gb=$((cache_size / 1000 / 1000 / 1000))
+
+        if [[ $cache_size -gt $MIN_FREE_BYTES ]]; then
+            echo -e "${YELLOW}Package cache is using ${cache_gb}GB.${RESET}" >&2
+            echo -e "${YELLOW}Consider cleaning it with: sudo paccache -rk1${RESET}" >&2
+        fi
+
+        read -p "Continue anyway? [y/N] " -n 1 -r
+        echo
+        [[ $REPLY =~ ^[Yy]$ ]] || exit 1
+    fi
+}
+
+#==============================================================================
+# Database checking and repair
+#==============================================================================
+
+check_databases() {
+    step "Checking package databases..."
+
+    local db_dir="/var/lib/pacman/sync"
+    local corrupted_files
+
+    corrupted_files=$(file "$db_dir"/*.{db,files} 2>/dev/null | grep -Pv "(gzip|Zstandard|XZ) compressed data" || true)
+
+    if [[ -n "$corrupted_files" ]]; then
+        error "Corrupted database files detected:"
+        echo "$corrupted_files" >&2
+        return 1
+    fi
+
+    success "Package databases are healthy"
+    return 0
+}
+
+clear_databases() {
+    warn "This will clear all package databases!"
+    read -p "Are you sure? [y/N] " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        run_sudo rm -rf /var/lib/pacman/sync
+        success "Package databases cleared"
+        info "Running pacman -Sy to rebuild databases..."
+        run_sudo pacman -Sy
+    else
+        info "Aborted"
+    fi
+}
+
+#==============================================================================
+# Keyring management
+#==============================================================================
+
+update_keyrings() {
+    step "Updating keyrings first to prevent signature errors..."
+
+    # Find which keyrings are actually installed
+    local installed_keyrings=()
+
+    for keyring in "${KEYRINGS[@]}"; do
+        if pacman -Q "$keyring" &>/dev/null; then
+            installed_keyrings+=("$keyring")
+        fi
+    done
+
+    if [[ ${#installed_keyrings[@]} -eq 0 ]]; then
+        warn "No recognized keyrings found installed"
+        return 0
+    fi
+
+    info "Found installed keyrings: ${installed_keyrings[*]}"
+
+    # Update keyrings before anything else
+    run_sudo pacman -Sy --noconfirm --needed "${installed_keyrings[@]}" || {
+        warn "Keyring update failed, but continuing..."
+    }
+
+    success "Keyrings updated"
+}
+
+reset_keyrings() {
+    warn "This will completely reset your keyrings!"
+    warn "Your old keyring will be backed up to /root/pacman-key.bak.$(date +%Y%m%d-%H%M)"
+    read -p "Are you sure? [y/N] " -n 1 -r
+    echo
+
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        info "Aborted"
+        return 0
+    fi
+
+    step "Backing up old keyring..."
+    run_sudo mv /etc/pacman.d/gnupg "/root/pacman-key.bak.$(date +%Y%m%d-%H%M).by.$progname"
+
+    step "Initializing new keyring..."
+    run_sudo pacman-key --init
+
+    step "Populating keyrings..."
+    # Only populate keyrings that are installed
+    local populate_args=()
+    for keyring in archlinux chaotic endeavouros rebornos; do
+        if pacman -Q "${keyring}-keyring" &>/dev/null; then
+            populate_args+=("$keyring")
+        fi
+    done
+
+    if [[ ${#populate_args[@]} -gt 0 ]]; then
+        run_sudo pacman-key --populate "${populate_args[@]}"
+    fi
+
+    step "Syncing databases and updating keyrings..."
+    run_sudo pacman -Syy --noconfirm archlinux-keyring chaotic-keyring endeavouros-keyring rebornos-keyring 2>/dev/null || {
+        warn "Some keyrings may not be available in your repositories"
+    }
+
+    step "Running full system update..."
+    run_sudo pacman -Syu
+
+    success "Keyrings have been reset"
+    exit 0
+}
+
+#==============================================================================
+# Package cache management
+#==============================================================================
+
+clean_package_cache() {
+    if [[ -z "$CACHE_LIMIT" ]]; then
+        return 0
+    fi
+
+    step "Cleaning package cache (keeping last $CACHE_LIMIT versions)..."
+
+    if ! command -v paccache &>/dev/null; then
+        warn "paccache not found (install pacman-contrib)"
+        return 1
+    fi
+
+    run_sudo paccache --verbose -rk"$CACHE_LIMIT"
+
+    local cache_size
+    cache_size=$(du -hd1 /var/cache/pacman/pkg/ 2>/dev/null | awk '{print $1}')
+    info "Package cache size: $cache_size"
+}
+
+#==============================================================================
+# pacdiff integration
+#==============================================================================
+
+run_pacdiff() {
+    if [[ "$RUN_PACDIFF" != "yes" ]]; then
+        return 0
+    fi
+
+    step "Checking for .pacnew and .pacsave files..."
+
+    if command -v pacdiff &>/dev/null; then
+        run_sudo pacdiff
+    else
+        warn "pacdiff not found (install pacman-contrib)"
+    fi
+}
+
+#==============================================================================
+# Other updates (flatpak, etc)
+#==============================================================================
+
+run_other_updates() {
+    if [[ "$RUN_OTHER_UPDATES" != "yes" ]]; then
+        return 0
+    fi
+
+    local other_script="$HOME/Projects/wulfup/wulfup-other"
+
+    if [[ -f "$other_script" ]]; then
+        info "Running additional updates from wulfup-other..."
+        bash "$other_script"
+    else
+        info "No wulfup-other script found, skipping additional updates"
+    fi
+}
+
+#==============================================================================
+# Main update process
+#==============================================================================
+
+do_update() {
+    info "Starting system update..."
+    echo
+
+    # Pre-update checks
+    check_lock_file
+    check_disk_space
+
+    if ! check_databases; then
+        warn "Database corruption detected"
+        read -p "Try to clear and rebuild databases? [Y/n] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            clear_databases
+        else
+            die "Cannot proceed with corrupted databases"
+        fi
+    fi
+
+    echo
+
+    # Update keyrings first if enabled
+    if [[ "$UPDATE_KEYRINGS" == "yes" ]]; then
+        update_keyrings
+        echo
+    fi
+
+    # Sync databases
+    step "Synchronizing package databases..."
+    run_sudo pacman -Sy
+    echo
+
+    # System update
+    info "Updating system packages..."
+    run_sudo pacman -Su
+    echo
+
+    # AUR updates if helper available
+    if [[ "$AUR_HELPER" != "pacman" ]]; then
+        info "Updating AUR packages with $AUR_HELPER..."
+        run_cmd "$AUR_HELPER" -Sua
+        echo
+    fi
+
+    # Post-update tasks
+    clean_package_cache
+    run_pacdiff
+
+    if [[ "$RUN_SYNC" == "yes" ]]; then
+        step "Syncing filesystems..."
+        run_cmd sync
+    fi
+
+    run_other_updates
+
+    echo
+    success "System update complete!"
+}
+
+#==============================================================================
+# Usage information
+#==============================================================================
+
+usage() {
+    cat << EOF
+${BOLD}wulfup${RESET} - Transparent system updater for Arch-based distributions
+
+${BOLD}USAGE:${RESET}
+    $progname [OPTIONS]
+
+${BOLD}OPTIONS:${RESET}
+    -h, --help              Show this help message
+    -v, --version           Show version information
+
+    ${BOLD}Update Options:${RESET}
+    --no-keyring            Skip keyring updates
+    --no-sync               Don't run 'sync' after update
+    --no-aur                Don't update AUR packages (use only pacman)
+    --helper <name>         Use specific AUR helper (yay, paru, or pacman)
+    --pacdiff               Run pacdiff after update to handle .pacnew files
+    --other         Run wulfup-other script for additional updates
+
+    ${BOLD}Maintenance Options:${RESET}
+    --cache-limit <N>       Keep only N versions of each package (1-5)
+    --min-free-bytes <N>    Minimum free space in bytes (default: 1GB)
+
+    ${BOLD}Troubleshooting:${RESET}
+    --check-databases       Check if package databases are corrupted
+    --clear-databases       Clear and rebuild package databases
+    --reset-keyrings        Completely reset and reinitialize keyrings
+
+${BOLD}KEYRINGS SUPPORTED:${RESET}
+    - archlinux-keyring     (Arch Linux official)
+    - chaotic-keyring       (Chaotic-AUR)
+    - endeavouros-keyring   (EndeavourOS)
+    - rebornos-keyring      (RebornOS)
+
+${BOLD}EXAMPLES:${RESET}
+    # Basic system update
+    $progname
+
+    # Update with AUR, clean cache, run pacdiff
+    $progname --helper yay --cache-limit 2 --pacdiff
+
+    # Fix keyring issues
+    $progname --reset-keyrings
+
+    # Check for database corruption
+    $progname --check-databases
+
+${BOLD}NOTES:${RESET}
+    - All commands are shown before execution for transparency
+    - Keyrings are updated first to prevent signature errors
+    - Automatically detects and uses yay or paru if available
+    - Lock files and disk space are checked before updating
+
+EOF
+    exit 0
+}
+
+#==============================================================================
+# Argument parsing
+#==============================================================================
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage
+                ;;
+            -v|--version)
+                echo "$progname version $VERSION"
+                exit 0
+                ;;
+            --no-keyring)
+                UPDATE_KEYRINGS="no"
+                ;;
+            --no-sync)
+                RUN_SYNC="no"
+                ;;
+            --no-aur)
+                AUR_HELPER="pacman"
+                ;;
+            --helper)
+                shift
+                AUR_HELPER="$1"
+                if [[ ! "$AUR_HELPER" =~ ^(yay|paru|pacman)$ ]]; then
+                    die "Invalid helper: $AUR_HELPER (must be yay, paru, or pacman)"
+                fi
+                ;;
+            --pacdiff)
+                RUN_PACDIFF="yes"
+                ;;
+            --other)
+                RUN_OTHER_UPDATES="yes"
+                ;;
+            --cache-limit)
+                shift
+                CACHE_LIMIT="$1"
+                if [[ ! "$CACHE_LIMIT" =~ ^[1-5]$ ]]; then
+                    die "Invalid cache limit: $CACHE_LIMIT (must be 1-5)"
+                fi
+                ;;
+            --min-free-bytes)
+                shift
+                MIN_FREE_BYTES="$1"
+                if [[ ! "$MIN_FREE_BYTES" =~ ^[0-9]+$ ]]; then
+                    die "Invalid min-free-bytes: $MIN_FREE_BYTES (must be a number)"
+                fi
+                ;;
+            --check-databases)
+                check_databases && success "Databases are OK" || error "Databases are corrupted"
+                exit $?
+                ;;
+            --clear-databases)
+                clear_databases
+                exit 0
+                ;;
+            --reset-keyrings)
+                reset_keyrings
+                exit 0
+                ;;
+            *)
+                die "Unknown option: $1\nUse --help for usage information"
+                ;;
+        esac
+        shift
+    done
+}
+
+#==============================================================================
+# Main entry point
+#==============================================================================
+
+main() {
+    # Check if running as root
+    if [[ $EUID -eq 0 ]]; then
+        die "Do not run this script as root. It will use sudo when needed."
+    fi
+
+    # Check if sudo is available
+    if ! command -v sudo &>/dev/null; then
+        die "sudo is required but not found"
+    fi
+
+    # Parse arguments
+    parse_args "$@"
+
+    # Auto-detect AUR helper if not specified
+    if [[ -z "$AUR_HELPER" ]]; then
+        if detect_aur_helper; then
+            info "Detected AUR helper: $AUR_HELPER"
+        else
+            info "No AUR helper found, using pacman only"
+        fi
+    fi
+
+    # Run the update
+    do_update
+}
+
+main "$@"

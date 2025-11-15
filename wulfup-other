@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+# wulfup-other - Additional update commands for non-pacman packages
+# This script is called by wulfup when --other-updates is used
+
+set -euo pipefail
+
+# Color definitions (matching main wulfup script)
+if [[ -t 2 ]]; then
+    GREEN='\e[0;32m'
+    BLUE='\e[0;34m'
+    YELLOW='\e[0;33m'
+    RED='\e[0;31m'
+    BOLD='\e[1m'
+    RESET='\e[0m'
+else
+    GREEN='' BLUE='' YELLOW='' RED='' BOLD='' RESET=''
+fi
+
+# Output functions
+info() {
+    echo -e "${BLUE}${BOLD}==>${RESET} ${BOLD}$*${RESET}" >&2
+}
+
+success() {
+    echo -e "${GREEN}${BOLD}==>${RESET} ${GREEN}$*${RESET}" >&2
+}
+
+warn() {
+    echo -e "${YELLOW}${BOLD}==> WARNING:${RESET} ${YELLOW}$*${RESET}" >&2
+}
+
+error() {
+    echo -e "${RED}${BOLD}==> ERROR:${RESET} ${RED}$*${RESET}" >&2
+}
+
+step() {
+    echo -e "${BLUE}${BOLD}::${RESET} $*" >&2
+}
+
+# Show command before running (transparent execution)
+run_cmd() {
+    echo -e "${GREEN}${BOLD}\$${RESET} $*" >&2
+    "$@"
+}
+
+#==============================================================================
+# Update Functions
+#==============================================================================
+
+update_flatpak() {
+    if ! command -v flatpak &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating Flatpak applications..."
+
+    # Check if any flatpaks are installed
+    if [[ $(flatpak list 2>/dev/null | wc -l) -eq 0 ]]; then
+        info "No Flatpak applications installed, skipping"
+        return 0
+    fi
+
+    run_cmd flatpak update -y || warn "Flatpak update failed"
+}
+
+update_doom_emacs() {
+    if ! command -v doom &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating Doom Emacs..."
+    run_cmd doom upgrade || warn "Doom Emacs update failed"
+}
+
+# Add more update functions here as needed
+# Examples:
+#
+# update_rust() {
+#     if command -v rustup &>/dev/null; then
+#         step "Updating Rust toolchain..."
+#         run_cmd rustup update
+#     fi
+# }
+#
+# update_npm_globals() {
+#     if command -v npm &>/dev/null; then
+#         step "Updating global npm packages..."
+#         run_cmd npm update -g
+#     fi
+# }
+#
+# update_pipx() {
+#     if command -v pipx &>/dev/null; then
+#         step "Updating pipx packages..."
+#         run_cmd pipx upgrade-all
+#     fi
+# }
+
+#==============================================================================
+# Main execution
+#==============================================================================
+
+main() {
+    info "Running additional package updates..."
+    echo
+
+    # Call update functions - only runs if the tool is installed
+    update_flatpak
+    update_doom_emacs
+
+    # Uncomment or add more as needed:
+    # update_rust
+    # update_npm_globals
+    # update_pipx
+
+    echo
+    success "Additional updates complete"
+}
+
+main "$@"
