@@ -44,6 +44,11 @@ run_cmd() {
     "$@"
 }
 
+run_sudo() {
+    echo -e "${GREEN}${BOLD}\$ sudo${RESET} $*" >&2
+    sudo "$@"
+}
+
 #==============================================================================
 # Update Functions
 #==============================================================================
@@ -114,7 +119,7 @@ update_npm_globals() {
         return 0
     fi
 
-    run_cmd npm update -g || warn "npm global update failed"
+    run_sudo npm update -g || warn "npm global update failed"
 }
 
 update_pipx() {
@@ -166,7 +171,13 @@ main() {
 
     # Call update functions - only runs if the tool is installed
     update_flatpak
+    update_snap
     update_doom_emacs
+    update_rust
+    update_npm_globals
+    update_pipx
+    update_cargo_packages
+    update_go_packages
 
     # Uncomment or add more as needed:
     # update_rust
