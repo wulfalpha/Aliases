@@ -64,6 +64,22 @@ update_flatpak() {
     run_cmd flatpak update -y || warn "Flatpak update failed"
 }
 
+update_snap() {
+    if ! command -v snap &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating Snap packages..."
+
+    # Check if any snaps are installed
+    if [[ $(snap list 2>/dev/null | wc -l) -le 1 ]]; then
+        info "No Snap packages installed, skipping"
+        return 0
+    fi
+
+    run_cmd sudo snap refresh || warn "Snap refresh failed"
+}
+
 update_doom_emacs() {
     if ! command -v doom &>/dev/null; then
         return 0  # Silently skip if not installed
@@ -73,30 +89,73 @@ update_doom_emacs() {
     run_cmd doom upgrade || warn "Doom Emacs update failed"
 }
 
-# Add more update functions here as needed
-# Examples:
-#
-# update_rust() {
-#     if command -v rustup &>/dev/null; then
-#         step "Updating Rust toolchain..."
-#         run_cmd rustup update
-#     fi
-# }
-#
-# update_npm_globals() {
-#     if command -v npm &>/dev/null; then
-#         step "Updating global npm packages..."
-#         run_cmd npm update -g
-#     fi
-# }
-#
-# update_pipx() {
-#     if command -v pipx &>/dev/null; then
-#         step "Updating pipx packages..."
-#         run_cmd pipx upgrade-all
-#     fi
-# }
+update_rust() {
+    if ! command -v rustup &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
 
+    step "Updating Rust toolchain..."
+    run_cmd rustup update || warn "Rust update failed"
+}
+
+update_npm_globals() {
+    if ! command -v npm &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating global npm packages..."
+
+    # Check if any global packages are installed
+    local global_packages
+    global_packages=$(npm list -g --depth=0 2>/dev/null | wc -l)
+
+    if [[ $global_packages -le 1 ]]; then
+        info "No global npm packages installed, skipping"
+        return 0
+    fi
+
+    run_cmd npm update -g || warn "npm global update failed"
+}
+
+update_pipx() {
+    if ! command -v pipx &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating pipx packages..."
+
+    # Check if any pipx packages are installed
+    if [[ $(pipx list 2>/dev/null | grep -c "package") -eq 0 ]]; then
+        info "No pipx packages installed, skipping"
+        return 0
+    fi
+
+    run_cmd pipx upgrade-all || warn "pipx upgrade failed"
+}
+
+update_cargo_packages() {
+    if ! command -v cargo &>/dev/null || ! command -v cargo-install-update &>/dev/null; then
+        return 0  # Silently skip if cargo or cargo-update not installed
+    fi
+
+    step "Updating cargo-installed packages..."
+    run_cmd cargo install-update -a || warn "cargo update failed"
+}
+
+update_go_packages() {
+    if ! command -v go &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    # Only if you use a tool like gup or have a list of go packages
+    # This is just a placeholder - customize as needed
+    if command -v gup &>/dev/null; then
+        step "Updating Go packages..."
+        run_cmd gup update || warn "Go package update failed"
+    fi
+}
+
+# Add more update functions here as needed
 #==============================================================================
 # Main execution
 #==============================================================================
