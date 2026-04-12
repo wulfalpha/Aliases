@@ -6,7 +6,7 @@
 set -euo pipefail
 
 progname="${0##*/}"
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # Color definitions
 if [[ -t 2 ]]; then
@@ -37,7 +37,7 @@ RUN_OTHER_UPDATES="no"
 # Supported keyrings
 KEYRINGS=(
     "archlinux-keyring"
-    # "cachyos-keyring"
+    "cachyos-keyring"
     "chaotic-keyring"
     "endeavouros-keyring"
     "rebornos-keyring"
@@ -141,14 +141,15 @@ check_disk_space() {
     local available
     available=$(findmnt / -nbo avail)
     local available_gb=$((available / 1000 / 1000 / 1000))
+    local min_gb=$((MIN_FREE_BYTES / 1000 / 1000 / 1000))
 
     info "Available space on /: ${available_gb}GB"
 
     if [[ $available -lt $MIN_FREE_BYTES ]]; then
-        warn "Low disk space! Less than 1GB available on root partition."
+        warn "Low disk space! Less than ${min_gb}GB available on root partition."
 
         local cache_size
-        cache_size=$(du -sb /var/cache/pacman/pkg 2>/dev/null | awk '{print $1}')
+        cache_size=$(du -sb /var/cache/pacman/pkg 2>/dev/null | awk '{print $1}' || echo 0)
         local cache_gb=$((cache_size / 1000 / 1000 / 1000))
 
         if [[ $cache_size -gt $MIN_FREE_BYTES ]]; then
@@ -203,10 +204,7 @@ clear_databases() {
 # Keyring management
 #==============================================================================
 
-update_keyrings() {
-    step "Updating keyrings first to prevent signature errors..."
-
-    # Find which keyrings are actually installed
+get_installed_keyrings() {
     local installed_keyrings=()
 
     for keyring in "${KEYRINGS[@]}"; do
@@ -215,6 +213,15 @@ update_keyrings() {
         fi
     done
 
+    printf '%s\n' "${installed_keyrings[@]}"
+}
+
+update_keyrings() {
+    step "Updating keyrings first to prevent signature errors..."
+
+    local installed_keyrings=()
+    mapfile -t installed_keyrings < <(get_installed_keyrings)
+
     if [[ ${#installed_keyrings[@]} -eq 0 ]]; then
         warn "No recognized keyrings found installed"
         return 0
@@ -222,7 +229,8 @@ update_keyrings() {
 
     info "Found installed keyrings: ${installed_keyrings[*]}"
 
-    # Update keyrings before anything else
+    # Intentional exception:
+    # Updating keyrings first can help avoid signature failures before the main -Syu.
     run_sudo pacman -Sy --noconfirm --needed "${installed_keyrings[@]}" || {
         warn "Keyring update failed, but continuing..."
     }
@@ -248,22 +256,30 @@ reset_keyrings() {
     run_sudo pacman-key --init
 
     step "Populating keyrings..."
-    # Only populate keyrings that are installed
     local populate_args=()
-    for keyring in archlinux chaotic endeavouros rebornos; do
-        if pacman -Q "${keyring}-keyring" &>/dev/null; then
-            populate_args+=("$keyring")
+    local reinstall_keyrings=()
+
+    for keyring_pkg in "${KEYRINGS[@]}"; do
+        if pacman -Q "$keyring_pkg" &>/dev/null; then
+            reinstall_keyrings+=("$keyring_pkg")
+            populate_args+=("${keyring_pkg%-keyring}")
         fi
     done
 
     if [[ ${#populate_args[@]} -gt 0 ]]; then
         run_sudo pacman-key --populate "${populate_args[@]}"
+    else
+        warn "No installed keyrings found to populate"
     fi
 
     step "Syncing databases and updating keyrings..."
-    run_sudo pacman -Syy --noconfirm archlinux-keyring chaotic-keyring endeavouros-keyring rebornos-keyring 2>/dev/null || {
-        warn "Some keyrings may not be available in your repositories"
-    }
+    if [[ ${#reinstall_keyrings[@]} -gt 0 ]]; then
+        run_sudo pacman -Syy --noconfirm "${reinstall_keyrings[@]}" || {
+            warn "Some keyrings may not be available in your repositories"
+        }
+    else
+        warn "No installed keyring packages found to reinstall"
+    fi
 
     step "Running full system update..."
     run_sudo pacman -Syu
@@ -291,7 +307,7 @@ clean_package_cache() {
     run_sudo paccache --verbose -rk"$CACHE_LIMIT"
 
     local cache_size
-    cache_size=$(du -hd1 /var/cache/pacman/pkg/ 2>/dev/null | awk '{print $1}')
+    cache_size=$(du -sh /var/cache/pacman/pkg/ 2>/dev/null | awk '{print $1}')
     info "Package cache size: $cache_size"
 }
 
@@ -322,7 +338,7 @@ run_other_updates() {
         return 0
     fi
 
-    local other_script="$HOME/Projects/wulfup/wulfup-other"
+    local other_script="/usr/bin/wulfup-other"
 
     if [[ -f "$other_script" ]]; then
         info "Running additional updates from wulfup-other..."
@@ -363,14 +379,9 @@ do_update() {
         echo
     fi
 
-    # Sync databases
-    step "Synchronizing package databases..."
-    run_sudo pacman -Sy
-    echo
-
-    # System update
-    info "Updating system packages..."
-    run_sudo pacman -Su
+    # Full system update
+    info "Synchronizing databases and updating system packages..."
+    run_sudo pacman -Syu
     echo
 
     # AUR updates if helper available
@@ -416,7 +427,7 @@ ${BOLD}OPTIONS:${RESET}
     --no-aur                Don't update AUR packages (use only pacman)
     --helper <name>         Use specific AUR helper (yay, paru, or pacman)
     --pacdiff               Run pacdiff after update to handle .pacnew files
-    --other         Run wulfup-other script for additional updates
+    --other                 Run wulfup-other script for additional updates
 
     ${BOLD}Maintenance Options:${RESET}
     --cache-limit <N>       Keep only N versions of each package (1-5)
@@ -429,6 +440,7 @@ ${BOLD}OPTIONS:${RESET}
 
 ${BOLD}KEYRINGS SUPPORTED:${RESET}
     - archlinux-keyring     (Arch Linux official)
+    - cachyos-keyring       (CachyOS)
     - chaotic-keyring       (Chaotic-AUR)
     - endeavouros-keyring   (EndeavourOS)
     - rebornos-keyring      (RebornOS)
@@ -460,6 +472,13 @@ EOF
 # Argument parsing
 #==============================================================================
 
+require_arg() {
+    local opt="$1"
+    if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        die "Option $opt requires a value"
+    fi
+}
+
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -480,6 +499,7 @@ parse_args() {
                 AUR_HELPER="pacman"
                 ;;
             --helper)
+                require_arg "$1" "$@"
                 shift
                 AUR_HELPER="$1"
                 if [[ ! "$AUR_HELPER" =~ ^(yay|paru|pacman)$ ]]; then
@@ -493,6 +513,7 @@ parse_args() {
                 RUN_OTHER_UPDATES="yes"
                 ;;
             --cache-limit)
+                require_arg "$1" "$@"
                 shift
                 CACHE_LIMIT="$1"
                 if [[ ! "$CACHE_LIMIT" =~ ^[1-5]$ ]]; then
@@ -500,6 +521,7 @@ parse_args() {
                 fi
                 ;;
             --min-free-bytes)
+                require_arg "$1" "$@"
                 shift
                 MIN_FREE_BYTES="$1"
                 if [[ ! "$MIN_FREE_BYTES" =~ ^[0-9]+$ ]]; then

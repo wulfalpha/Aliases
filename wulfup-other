@@ -91,7 +91,9 @@ update_doom_emacs() {
     fi
 
     step "Updating Doom Emacs..."
-    run_cmd doom upgrade || warn "Doom Emacs update failed"
+    run_cmd doom up || warn "Doom Emacs update failed"
+    step "Syncing Doom Emacs and updating packages..."
+    run_cmd doom sync -u || warn "Doom Emacs sync failed"
 }
 
 update_rust() {
@@ -160,6 +162,31 @@ update_go_packages() {
     fi
 }
 
+update_yazi_plugins() {
+    if ! command -v ya &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    step "Updating yazi plugins..."
+    run_cmd ya pkg upgrade || warn "yazi plugin update failed"
+}
+
+update_astronvim() {
+    if ! command -v nvim &>/dev/null; then
+        return 0  # Silently skip if not installed
+    fi
+
+    # Check for lazy.nvim lockfile as a proxy for lazy-managed config
+    local lazy_lock="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/lazy-lock.json"
+    if [[ ! -f "$lazy_lock" ]]; then
+        return 0
+    fi
+
+    step "Updating AstroNvim plugins via lazy.nvim..."
+    # Lazy! (with bang) runs sync non-interactively; +qa exits cleanly
+    run_cmd nvim --headless "+Lazy! sync" +qa || warn "AstroNvim/lazy.nvim update failed"
+   }
+
 # Add more update functions here as needed
 #==============================================================================
 # Main execution
@@ -173,9 +200,11 @@ main() {
     update_flatpak
     update_snap
     update_doom_emacs
+    update_astronvim
     update_rust
     update_npm_globals
     update_pipx
+    update_yazi_plugins
     update_cargo_packages
     update_go_packages
 
