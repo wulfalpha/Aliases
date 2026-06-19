@@ -1,40 +1,51 @@
 #!/usr/bin/env bash
 
-# wulfup - A transparent system updater for Arch-based distributions
-# Handles keyrings, lock files, AUR helpers, and package maintenance
+# wulfup - A transparent system updater for Arch Linux and macOS
+# Handles keyrings, lock files, AUR helpers, homebrew, and package maintenance
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for _wulfup_lib in "${SCRIPT_DIR}/wulfup-lib.sh" "/usr/lib/wulfup/wulfup-lib.sh"; do
+    if [[ -f "$_wulfup_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$_wulfup_lib"
+        break
+    fi
+done
+unset _wulfup_lib
+[[ -n "${WULFUP_LIB_LOADED:-}" ]] || { echo "wulfup-lib.sh not found" >&2; exit 1; }
+
 progname="${0##*/}"
-VERSION="1.1.0"
+VERSION="1.3.0"
 
-# Color definitions
-if [[ -t 2 ]]; then
-    RED='\e[0;31m'
-    GREEN='\e[0;32m'
-    YELLOW='\e[0;33m'
-    BLUE='\e[0;34m'
-    CYAN='\e[0;36m'
-    BOLD='\e[1m'
-    RESET='\e[0m'
-else
-    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' RESET=''
-fi
+# Platform detection
+PLATFORM="linux"
+[[ "$(uname -s)" == "Darwin" ]] && PLATFORM="macos"
 
-# Paths
+# Paths (Linux/Arch)
 LOCK_FILE="/var/lib/pacman/db.lck"
-PACMAN_CONF="/etc/pacman.conf"
 
-# Default settings
-MIN_FREE_BYTES=$((1000 * 1000 * 1000))  # 1GB
+# Default settings (all platforms)
+RUN_OTHER_UPDATES="no"
+
+# Linux/Arch settings
+MIN_FREE_BYTES=$((1024 * 1024 * 1024))  # 1 GiB
 CACHE_LIMIT=""
 AUR_HELPER=""
 RUN_PACDIFF="no"
 RUN_SYNC="yes"
 UPDATE_KEYRINGS="yes"
-RUN_OTHER_UPDATES="no"
+SKIP_PREVIEW="no"
 
-# Supported keyrings
+# macOS settings
+PKG_MANAGER=""
+UPDATE_CASKS="yes"
+UPDATE_MAS="yes"
+RUN_CLEANUP="yes"
+RUN_DOCTOR="no"
+
+# Supported keyrings (Linux/Arch)
 KEYRINGS=(
     "archlinux-keyring"
     "cachyos-keyring"
@@ -44,50 +55,7 @@ KEYRINGS=(
 )
 
 #==============================================================================
-# Output functions
-#==============================================================================
-
-info() {
-    echo -e "${BLUE}${BOLD}==>${RESET} ${BOLD}$*${RESET}" >&2
-}
-
-success() {
-    echo -e "${GREEN}${BOLD}==>${RESET} ${GREEN}$*${RESET}" >&2
-}
-
-warn() {
-    echo -e "${YELLOW}${BOLD}==> WARNING:${RESET} ${YELLOW}$*${RESET}" >&2
-}
-
-error() {
-    echo -e "${RED}${BOLD}==> ERROR:${RESET} ${RED}$*${RESET}" >&2
-}
-
-die() {
-    error "$*"
-    exit 1
-}
-
-step() {
-    echo -e "${CYAN}${BOLD}::${RESET} $*" >&2
-}
-
-#==============================================================================
-# Command execution - shows command before running
-#==============================================================================
-
-run_cmd() {
-    echo -e "${GREEN}${BOLD}\$${RESET} $*" >&2
-    "$@"
-}
-
-run_sudo() {
-    echo -e "${GREEN}${BOLD}\$ sudo${RESET} $*" >&2
-    sudo "$@"
-}
-
-#==============================================================================
-# Helper detection
+# AUR helper detection (Linux)
 #==============================================================================
 
 detect_aur_helper() {
@@ -105,7 +73,35 @@ detect_aur_helper() {
 }
 
 #==============================================================================
-# Lock file handling
+# Settings display
+#==============================================================================
+
+print_settings() {
+    info "Effective configuration:"
+    if [[ "$PLATFORM" == "macos" ]]; then
+        step "  Package manager: ${PKG_MANAGER:-auto-detect}"
+        step "  Update casks: $UPDATE_CASKS"
+        step "  Update MAS apps: $UPDATE_MAS"
+        step "  Run cleanup: $RUN_CLEANUP"
+        step "  Run doctor: $RUN_DOCTOR"
+    else
+        step "  AUR helper: $AUR_HELPER"
+        step "  Update keyrings: $UPDATE_KEYRINGS"
+        step "  Preview updates: $([[ "$SKIP_PREVIEW" == yes ]] && echo no || echo yes)"
+        step "  Run pacdiff: $RUN_PACDIFF"
+        step "  Run sync: $RUN_SYNC"
+        step "  Cache limit: ${CACHE_LIMIT:-none}"
+        step "  Min free space: $((MIN_FREE_BYTES / 1024 / 1024)) MiB"
+        step "  Pacman --noconfirm: $PACMAN_NOCONFIRM"
+    fi
+    step "  Other updates: $RUN_OTHER_UPDATES"
+    step "  Auto-yes (script prompts): $AUTO_YES"
+    step "  Continue on error: $CONTINUE_ON_ERROR"
+    echo
+}
+
+#==============================================================================
+# Lock file handling (Linux/Arch)
 #==============================================================================
 
 check_lock_file() {
@@ -113,17 +109,17 @@ check_lock_file() {
 
     if [[ -e "$LOCK_FILE" ]]; then
         if sudo fuser "$LOCK_FILE" &>/dev/null; then
-            die "Lock file $LOCK_FILE is in use by another process.\nAnother package manager may be running."
+            die "$WULFUP_EXIT_PRECONDITION" \
+                "Lock file $LOCK_FILE is in use by another process." \
+                "Another package manager may be running."
         else
             warn "Found stale lock file: $LOCK_FILE"
             echo -e "${BOLD}This likely means pacman was interrupted previously.${RESET}" >&2
-            read -p "Remove it? [Y/n] " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            if confirm "Remove it? [Y/n] " yes; then
                 run_sudo rm -f "$LOCK_FILE"
                 success "Lock file removed"
             else
-                die "Cannot proceed with lock file present"
+                die "$WULFUP_EXIT_ABORTED" "Cannot proceed with lock file present"
             fi
         fi
     else
@@ -132,7 +128,7 @@ check_lock_file() {
 }
 
 #==============================================================================
-# Disk space checking
+# Disk space checking (Linux/Arch)
 #==============================================================================
 
 check_disk_space() {
@@ -140,44 +136,51 @@ check_disk_space() {
 
     local available
     available=$(findmnt / -nbo avail)
-    local available_gb=$((available / 1000 / 1000 / 1000))
-    local min_gb=$((MIN_FREE_BYTES / 1000 / 1000 / 1000))
+    local available_mib=$((available / 1024 / 1024))
+    local min_mib=$((MIN_FREE_BYTES / 1024 / 1024))
 
-    info "Available space on /: ${available_gb}GB"
+    info "Available space on /: ${available_mib} MiB"
 
     if [[ $available -lt $MIN_FREE_BYTES ]]; then
-        warn "Low disk space! Less than ${min_gb}GB available on root partition."
+        warn "Low disk space! Less than ${min_mib} MiB available on root partition."
 
         local cache_size
         cache_size=$(du -sb /var/cache/pacman/pkg 2>/dev/null | awk '{print $1}' || echo 0)
-        local cache_gb=$((cache_size / 1000 / 1000 / 1000))
+        local cache_mib=$((cache_size / 1024 / 1024))
 
         if [[ $cache_size -gt $MIN_FREE_BYTES ]]; then
-            echo -e "${YELLOW}Package cache is using ${cache_gb}GB.${RESET}" >&2
+            echo -e "${YELLOW}Package cache is using ${cache_mib} MiB.${RESET}" >&2
             echo -e "${YELLOW}Consider cleaning it with: sudo paccache -rk1${RESET}" >&2
         fi
 
-        read -p "Continue anyway? [y/N] " -n 1 -r
-        echo
-        [[ $REPLY =~ ^[Yy]$ ]] || exit 1
+        if ! confirm "Continue anyway? [y/N] " no; then
+            die "$WULFUP_EXIT_ABORTED" "Aborted due to low disk space"
+        fi
     fi
 }
 
 #==============================================================================
-# Database checking and repair
+# Database checking and repair (Linux/Arch)
 #==============================================================================
 
 check_databases() {
     step "Checking package databases..."
 
     local db_dir="/var/lib/pacman/sync"
-    local corrupted_files
+    local corrupted_files=()
+    local f
 
-    corrupted_files=$(file "$db_dir"/*.{db,files} 2>/dev/null | grep -Pv "(gzip|Zstandard|XZ) compressed data" || true)
+    shopt -s nullglob
+    for f in "$db_dir"/*.{db,files}; do
+        if ! file "$f" | grep -qE '(gzip|Zstandard|XZ) compressed data'; then
+            corrupted_files+=("$f: $(file -b "$f")")
+        fi
+    done
+    shopt -u nullglob
 
-    if [[ -n "$corrupted_files" ]]; then
+    if [[ ${#corrupted_files[@]} -gt 0 ]]; then
         error "Corrupted database files detected:"
-        echo "$corrupted_files" >&2
+        printf '  %s\n' "${corrupted_files[@]}" >&2
         return 1
     fi
 
@@ -187,21 +190,20 @@ check_databases() {
 
 clear_databases() {
     warn "This will clear all package databases!"
-    read -p "Are you sure? [y/N] " -n 1 -r
-    echo
-
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        run_sudo rm -rf /var/lib/pacman/sync
-        success "Package databases cleared"
-        info "Running pacman -Sy to rebuild databases..."
-        run_sudo pacman -Sy
-    else
+    if ! confirm "Are you sure? [y/N] " no; then
         info "Aborted"
+        return 0
     fi
+
+    run_sudo rm -rf /var/lib/pacman/sync
+    success "Package databases cleared"
+    info "Running pacman -Syy to rebuild databases..."
+    # shellcheck disable=SC2046
+    run_sudo pacman -Syy $(pacman_noconfirm_args)
 }
 
 #==============================================================================
-# Keyring management
+# Keyring management (Linux/Arch)
 #==============================================================================
 
 get_installed_keyrings() {
@@ -229,11 +231,10 @@ update_keyrings() {
 
     info "Found installed keyrings: ${installed_keyrings[*]}"
 
-    # Intentional exception:
-    # Updating keyrings first can help avoid signature failures before the main -Syu.
-    run_sudo pacman -Sy --noconfirm --needed "${installed_keyrings[@]}" || {
-        warn "Keyring update failed, but continuing..."
-    }
+    # shellcheck disable=SC2046
+    if ! run_sudo pacman -Sy $(pacman_noconfirm_args) --needed "${installed_keyrings[@]}"; then
+        handle_failure "Keyring update failed"
+    fi
 
     success "Keyrings updated"
 }
@@ -241,10 +242,7 @@ update_keyrings() {
 reset_keyrings() {
     warn "This will completely reset your keyrings!"
     warn "Your old keyring will be backed up to /root/pacman-key.bak.$(date +%Y%m%d-%H%M)"
-    read -p "Are you sure? [y/N] " -n 1 -r
-    echo
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if ! confirm "Are you sure? [y/N] " no; then
         info "Aborted"
         return 0
     fi
@@ -274,9 +272,10 @@ reset_keyrings() {
 
     step "Syncing databases and updating keyrings..."
     if [[ ${#reinstall_keyrings[@]} -gt 0 ]]; then
-        run_sudo pacman -Syy --noconfirm "${reinstall_keyrings[@]}" || {
-            warn "Some keyrings may not be available in your repositories"
-        }
+        # shellcheck disable=SC2046
+        if ! run_sudo pacman -Syy $(pacman_noconfirm_args) "${reinstall_keyrings[@]}"; then
+            handle_failure "Some keyrings may not be available in your repositories"
+        fi
     else
         warn "No installed keyring packages found to reinstall"
     fi
@@ -289,7 +288,177 @@ reset_keyrings() {
 }
 
 #==============================================================================
-# Package cache management
+# macOS package manager detection
+#==============================================================================
+
+detect_package_managers_macos() {
+    local managers=()
+    command -v brew &>/dev/null && managers+=("brew")
+    command -v port &>/dev/null && managers+=("port")
+
+    if [[ ${#managers[@]} -eq 0 ]]; then
+        die "$WULFUP_EXIT_PRECONDITION" "No package manager found. Install Homebrew or MacPorts."
+    fi
+
+    printf '%s\n' "${managers[@]}"
+}
+
+#==============================================================================
+# macOS Homebrew updates
+#==============================================================================
+
+update_homebrew() {
+    ! command -v brew &>/dev/null && return 0
+
+    info "Updating Homebrew..."
+    echo
+
+    step "Updating Homebrew formulae..."
+    if ! run_cmd brew update; then
+        handle_failure "Homebrew update"
+        return
+    fi
+    echo
+
+    step "Upgrading formulae..."
+    if ! run_cmd brew upgrade; then
+        handle_failure "Homebrew formula upgrade"
+    fi
+    echo
+
+    if [[ "$UPDATE_CASKS" == "yes" ]]; then
+        step "Upgrading casks..."
+        if ! run_cmd brew upgrade --cask --greedy; then
+            handle_failure "Homebrew cask upgrade"
+        fi
+        echo
+    fi
+
+    if [[ "$RUN_CLEANUP" == "yes" ]]; then
+        step "Removing unused dependencies..."
+        run_cmd brew autoremove
+        echo
+
+        step "Cleaning up old versions..."
+        run_cmd brew cleanup
+        echo
+    fi
+
+    if [[ "$RUN_DOCTOR" == "yes" ]]; then
+        step "Running brew doctor..."
+        if ! run_cmd brew doctor; then
+            handle_failure "brew doctor"
+        fi
+        echo
+    fi
+}
+
+#==============================================================================
+# macOS MacPorts updates
+#==============================================================================
+
+update_macports() {
+    ! command -v port &>/dev/null && return 0
+
+    info "Updating MacPorts..."
+    echo
+
+    step "Syncing ports tree..."
+    if ! run_sudo port selfupdate; then
+        handle_failure "MacPorts selfupdate"
+        return
+    fi
+    echo
+
+    step "Upgrading outdated ports..."
+    if ! run_sudo port upgrade outdated; then
+        handle_failure "MacPorts upgrade"
+    fi
+    echo
+
+    if [[ "$RUN_CLEANUP" == "yes" ]]; then
+        step "Cleaning up inactive ports..."
+        run_sudo port uninstall inactive || true
+        echo
+
+        step "Reclaiming disk space..."
+        run_sudo port reclaim || true
+        echo
+    fi
+
+    if [[ "$RUN_DOCTOR" == "yes" ]]; then
+        step "Running port diagnose..."
+        if ! run_cmd port diagnose; then
+            handle_failure "port diagnose"
+        fi
+        echo
+    fi
+}
+
+#==============================================================================
+# macOS Mac App Store updates
+#==============================================================================
+
+update_mas() {
+    [[ "$UPDATE_MAS" != "yes" ]] && return 0
+
+    if ! command -v mas &>/dev/null; then
+        info "mas not installed, skipping Mac App Store updates"
+        info "Install with: brew install mas"
+        return 0
+    fi
+
+    info "Updating Mac App Store apps..."
+    echo
+
+    step "Upgrading App Store apps..."
+    if ! run_cmd mas upgrade; then
+        handle_failure "Mac App Store upgrade"
+    fi
+    echo
+}
+
+#==============================================================================
+# Update preview (Linux/Arch)
+#==============================================================================
+
+preview_updates() {
+    if [[ "$SKIP_PREVIEW" == "yes" ]]; then
+        return 0
+    fi
+
+    step "Previewing available updates..."
+
+    if command -v checkupdates &>/dev/null; then
+        local repo_updates
+        repo_updates=$(checkupdates 2>/dev/null || true)
+        if [[ -n "$repo_updates" ]]; then
+            echo "$repo_updates" >&2
+        else
+            info "No official repository updates available"
+        fi
+    else
+        warn "checkupdates not found (install pacman-contrib)"
+    fi
+
+    if [[ "$AUR_HELPER" != "pacman" ]]; then
+        local aur_updates
+        aur_updates=$("$AUR_HELPER" -Qua 2>/dev/null || true)
+        if [[ -n "$aur_updates" ]]; then
+            echo "$aur_updates" >&2
+        else
+            info "No AUR updates available"
+        fi
+    fi
+
+    echo
+    if ! confirm "Proceed with update? [Y/n] " yes; then
+        die "$WULFUP_EXIT_ABORTED" "Update aborted by user"
+    fi
+}
+
+#==============================================================================
+# Package cache management (Linux/Arch)
 #==============================================================================
 
 clean_package_cache() {
@@ -301,7 +470,7 @@ clean_package_cache() {
 
     if ! command -v paccache &>/dev/null; then
         warn "paccache not found (install pacman-contrib)"
-        return 1
+        return 0
     fi
 
     run_sudo paccache --verbose -rk"$CACHE_LIMIT"
@@ -312,11 +481,12 @@ clean_package_cache() {
 }
 
 #==============================================================================
-# pacdiff integration
+# pacdiff integration (Linux/Arch)
 #==============================================================================
 
 run_pacdiff() {
     if [[ "$RUN_PACDIFF" != "yes" ]]; then
+        list_pacnew_files
         return 0
     fi
 
@@ -326,11 +496,65 @@ run_pacdiff() {
         run_sudo pacdiff
     else
         warn "pacdiff not found (install pacman-contrib)"
+        list_pacnew_files
     fi
 }
 
+list_pacnew_files() {
+    local pacnew_files=()
+    local f
+
+    while IFS= read -r f; do
+        pacnew_files+=("$f")
+    done < <(find /etc \( -name '*.pacnew' -o -name '*.pacsave' \) 2>/dev/null)
+
+    if [[ ${#pacnew_files[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    warn "Found ${#pacnew_files[@]} .pacnew/.pacsave file(s):"
+    printf '  %s\n' "${pacnew_files[@]}" >&2
+    info "Review with: sudo pacdiff"
+}
+
 #==============================================================================
-# Other updates (flatpak, etc)
+# Post-update maintenance reminders (Linux/Arch)
+#==============================================================================
+
+remind_orphans() {
+    step "Checking for orphaned packages..."
+
+    local orphans
+    orphans=$(pacman -Qtdq 2>/dev/null || true)
+
+    if [[ -n "$orphans" ]]; then
+        warn "Orphaned packages detected (not removed automatically):"
+        echo "$orphans" >&2
+        info "Remove with: sudo pacman -Rns \$(pacman -Qtdq)"
+    else
+        success "No orphaned packages found"
+    fi
+}
+
+remind_kernel_rebuild() {
+    local boot_epoch pkg pkg_time pkg_epoch
+
+    boot_epoch=$(date -d "$(uptime -s)" +%s 2>/dev/null) || return 0
+
+    while IFS= read -r pkg; do
+        pkg_time=$(pacman -Qi "$pkg" 2>/dev/null | awk -F': ' '/^Install Date/ {print $2}')
+        [[ -z "$pkg_time" ]] && continue
+        pkg_epoch=$(date -d "$pkg_time" +%s 2>/dev/null) || continue
+        if (( pkg_epoch > boot_epoch )); then
+            info "Kernel package $pkg was updated since last boot."
+            info "Reboot when ready. If needed: sudo mkinitcpio -P"
+            return 0
+        fi
+    done < <(pacman -Q 2>/dev/null | awk '/^linux/ && !/-firmware|-headers|-api-headers|-tools|-docs|-man/ {print $1}')
+}
+
+#==============================================================================
+# Other updates (flatpak, brew extras, etc)
 #==============================================================================
 
 run_other_updates() {
@@ -338,23 +562,71 @@ run_other_updates() {
         return 0
     fi
 
-    local other_script="/usr/bin/wulfup-other"
+    local other_script
+    for other_script in \
+        "${SCRIPT_DIR}/wulfup-other" \
+        "$HOME/.local/bin/wulfup-other" \
+        "/usr/local/bin/wulfup-other" \
+        "/usr/bin/wulfup-other"; do
+        if [[ -f "$other_script" ]]; then
+            info "Running additional updates from $other_script..."
+            if ! AUTO_YES="$AUTO_YES" CONTINUE_ON_ERROR="$CONTINUE_ON_ERROR" PACMAN_NOCONFIRM="$PACMAN_NOCONFIRM" bash "$other_script"; then
+                handle_failure "Additional updates (wulfup-other) failed"
+            fi
+            return 0
+        fi
+    done
 
-    if [[ -f "$other_script" ]]; then
-        info "Running additional updates from wulfup-other..."
-        bash "$other_script"
+    info "No wulfup-other script found, skipping additional updates"
+}
+
+#==============================================================================
+# Main update process - macOS
+#==============================================================================
+
+do_update_macos() {
+    info "Starting system update (macOS)..."
+    echo
+
+    print_settings
+
+    local managers=()
+    if [[ -z "$PKG_MANAGER" ]]; then
+        while IFS= read -r _mgr; do managers+=("$_mgr"); done < <(detect_package_managers_macos)
+        info "Detected package managers: ${managers[*]}"
     else
-        info "No wulfup-other script found, skipping additional updates"
+        managers=("$PKG_MANAGER")
+    fi
+    echo
+
+    for mgr in "${managers[@]}"; do
+        case "$mgr" in
+            brew) update_homebrew ;;
+            port) update_macports ;;
+            *)    warn "Unknown package manager: $mgr" ;;
+        esac
+    done
+
+    update_mas
+    run_other_updates
+
+    echo
+    if report_failures; then
+        success "System update complete!"
+    else
+        die "$WULFUP_EXIT_ERROR" "System update finished with errors"
     fi
 }
 
 #==============================================================================
-# Main update process
+# Main update process - Linux/Arch
 #==============================================================================
 
-do_update() {
+do_update_linux() {
     info "Starting system update..."
     echo
+
+    print_settings
 
     # Pre-update checks
     check_lock_file
@@ -362,16 +634,16 @@ do_update() {
 
     if ! check_databases; then
         warn "Database corruption detected"
-        read -p "Try to clear and rebuild databases? [Y/n] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        if confirm "Try to clear and rebuild databases? [Y/n] " yes; then
             clear_databases
         else
-            die "Cannot proceed with corrupted databases"
+            die "$WULFUP_EXIT_PRECONDITION" "Cannot proceed with corrupted databases"
         fi
     fi
 
     echo
+
+    preview_updates
 
     # Update keyrings first if enabled
     if [[ "$UPDATE_KEYRINGS" == "yes" ]]; then
@@ -394,6 +666,8 @@ do_update() {
     # Post-update tasks
     clean_package_cache
     run_pacdiff
+    remind_orphans
+    remind_kernel_rebuild
 
     if [[ "$RUN_SYNC" == "yes" ]]; then
         step "Syncing filesystems..."
@@ -403,7 +677,19 @@ do_update() {
     run_other_updates
 
     echo
-    success "System update complete!"
+    if report_failures; then
+        success "System update complete!"
+    else
+        die "$WULFUP_EXIT_ERROR" "System update finished with errors"
+    fi
+}
+
+do_update() {
+    if [[ "$PLATFORM" == "macos" ]]; then
+        do_update_macos
+    else
+        do_update_linux
+    fi
 }
 
 #==============================================================================
@@ -412,7 +698,7 @@ do_update() {
 
 usage() {
     cat << EOF
-${BOLD}wulfup${RESET} - Transparent system updater for Arch-based distributions
+${BOLD}wulfup${RESET} - Transparent system updater for Arch Linux and macOS
 
 ${BOLD}USAGE:${RESET}
     $progname [OPTIONS]
@@ -421,24 +707,41 @@ ${BOLD}OPTIONS:${RESET}
     -h, --help              Show this help message
     -v, --version           Show version information
 
-    ${BOLD}Update Options:${RESET}
+    ${BOLD}Update Options (all platforms):${RESET}
+    --other                 Run wulfup-other script for additional updates
+    --yes                   Auto-answer wulfup's own prompts (not package manager's)
+    --continue-on-error     Warn and continue when optional steps fail
+
+    ${BOLD}Update Options (macOS):${RESET}
+    --pkg-manager <name>    Use specific package manager (brew, port, or both)
+    --no-casks              Skip Homebrew cask updates
+    --no-mas                Skip Mac App Store updates
+    --no-cleanup            Skip cleanup of old package versions
+    --doctor                Run package manager health checks
+
+    ${BOLD}Update Options (Linux/Arch):${RESET}
     --no-keyring            Skip keyring updates
+    --no-preview            Skip checkupdates preview before updating
     --no-sync               Don't run 'sync' after update
+    --sync                  Run 'sync' after update
     --no-aur                Don't update AUR packages (use only pacman)
     --helper <name>         Use specific AUR helper (yay, paru, or pacman)
     --pacdiff               Run pacdiff after update to handle .pacnew files
-    --other                 Run wulfup-other script for additional updates
+    --noconfirm             Pass --noconfirm to automated pacman steps (keyrings)
 
-    ${BOLD}Maintenance Options:${RESET}
+    ${BOLD}Maintenance Options (Linux/Arch):${RESET}
     --cache-limit <N>       Keep only N versions of each package (1-5)
-    --min-free-bytes <N>    Minimum free space in bytes (default: 1GB)
+    --min-free-bytes <N>    Minimum free space in bytes (default: 1 GiB)
 
-    ${BOLD}Troubleshooting:${RESET}
+    ${BOLD}Troubleshooting (Linux/Arch):${RESET}
     --check-databases       Check if package databases are corrupted
     --clear-databases       Clear and rebuild package databases
     --reset-keyrings        Completely reset and reinitialize keyrings
 
-${BOLD}KEYRINGS SUPPORTED:${RESET}
+${BOLD}CONFIG:${RESET}
+    ~/.config/wulfup/config or /etc/wulfup.conf
+
+${BOLD}KEYRINGS SUPPORTED (Linux/Arch):${RESET}
     - archlinux-keyring     (Arch Linux official)
     - cachyos-keyring       (CachyOS)
     - chaotic-keyring       (Chaotic-AUR)
@@ -446,23 +749,36 @@ ${BOLD}KEYRINGS SUPPORTED:${RESET}
     - rebornos-keyring      (RebornOS)
 
 ${BOLD}EXAMPLES:${RESET}
-    # Basic system update
+    # Basic system update (auto-detects platform)
     $progname
 
-    # Update with AUR, clean cache, run pacdiff
+    # macOS: update only Homebrew
+    $progname --pkg-manager brew
+
+    # macOS: update with health check and additional updates
+    $progname --doctor --other
+
+    # Arch: update with AUR, clean cache, run pacdiff
     $progname --helper yay --cache-limit 2 --pacdiff
 
-    # Fix keyring issues
+    # Arch: fix keyring issues
     $progname --reset-keyrings
 
-    # Check for database corruption
+    # Arch: check for database corruption
     $progname --check-databases
 
 ${BOLD}NOTES:${RESET}
     - All commands are shown before execution for transparency
-    - Keyrings are updated first to prevent signature errors
-    - Automatically detects and uses yay or paru if available
-    - Lock files and disk space are checked before updating
+    - Automatically detects platform and available package managers
+    - Lock files and disk space are checked before updating (Linux)
+    - Keyrings are updated first to prevent signature errors (Linux)
+    - Core pacman/AUR steps fail fast; use --continue-on-error for optional steps
+
+${BOLD}EXIT CODES:${RESET}
+    0  Success
+    1  General error
+    2  Precondition failed (lock, disk, databases)
+    3  User aborted
 
 EOF
     exit 0
@@ -475,7 +791,7 @@ EOF
 require_arg() {
     local opt="$1"
     if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
-        die "Option $opt requires a value"
+        die "$WULFUP_EXIT_ERROR" "Option $opt requires a value"
     fi
 }
 
@@ -489,48 +805,92 @@ parse_args() {
                 echo "$progname version $VERSION"
                 exit 0
                 ;;
+            # Common options
+            --other)
+                RUN_OTHER_UPDATES="yes"
+                ;;
+            --yes)
+                AUTO_YES="yes"
+                ;;
+            --continue-on-error)
+                CONTINUE_ON_ERROR="yes"
+                ;;
+            # macOS options
+            --pkg-manager)
+                require_arg "$1" "${2:-}"
+                shift
+                PKG_MANAGER="$1"
+                if [[ ! "$PKG_MANAGER" =~ ^(brew|port|both)$ ]]; then
+                    die "$WULFUP_EXIT_ERROR" "Invalid package manager: $PKG_MANAGER (must be brew, port, or both)"
+                fi
+                [[ "$PKG_MANAGER" == "both" ]] && PKG_MANAGER=""
+                ;;
+            --no-casks)
+                UPDATE_CASKS="no"
+                ;;
+            --no-mas)
+                UPDATE_MAS="no"
+                ;;
+            --no-cleanup)
+                RUN_CLEANUP="no"
+                ;;
+            --doctor)
+                RUN_DOCTOR="yes"
+                ;;
+            # Linux/Arch options
             --no-keyring)
                 UPDATE_KEYRINGS="no"
                 ;;
+            --no-preview)
+                SKIP_PREVIEW="yes"
+                ;;
             --no-sync)
                 RUN_SYNC="no"
+                ;;
+            --sync)
+                RUN_SYNC="yes"
                 ;;
             --no-aur)
                 AUR_HELPER="pacman"
                 ;;
             --helper)
-                require_arg "$1" "$@"
+                require_arg "$1" "${2:-}"
                 shift
                 AUR_HELPER="$1"
                 if [[ ! "$AUR_HELPER" =~ ^(yay|paru|pacman)$ ]]; then
-                    die "Invalid helper: $AUR_HELPER (must be yay, paru, or pacman)"
+                    die "$WULFUP_EXIT_ERROR" "Invalid helper: $AUR_HELPER (must be yay, paru, or pacman)"
                 fi
                 ;;
             --pacdiff)
                 RUN_PACDIFF="yes"
                 ;;
-            --other)
-                RUN_OTHER_UPDATES="yes"
+            --noconfirm)
+                PACMAN_NOCONFIRM="yes"
                 ;;
             --cache-limit)
-                require_arg "$1" "$@"
+                require_arg "$1" "${2:-}"
                 shift
                 CACHE_LIMIT="$1"
                 if [[ ! "$CACHE_LIMIT" =~ ^[1-5]$ ]]; then
-                    die "Invalid cache limit: $CACHE_LIMIT (must be 1-5)"
+                    die "$WULFUP_EXIT_ERROR" "Invalid cache limit: $CACHE_LIMIT (must be 1-5)"
                 fi
                 ;;
             --min-free-bytes)
-                require_arg "$1" "$@"
+                require_arg "$1" "${2:-}"
                 shift
                 MIN_FREE_BYTES="$1"
                 if [[ ! "$MIN_FREE_BYTES" =~ ^[0-9]+$ ]]; then
-                    die "Invalid min-free-bytes: $MIN_FREE_BYTES (must be a number)"
+                    die "$WULFUP_EXIT_ERROR" "Invalid min-free-bytes: $MIN_FREE_BYTES (must be a number)"
                 fi
                 ;;
             --check-databases)
-                check_databases && success "Databases are OK" || error "Databases are corrupted"
-                exit $?
+                if check_databases; then
+                    success "Databases are OK"
+                    exit 0
+                else
+                    error "Databases are corrupted"
+                    exit "$WULFUP_EXIT_PRECONDITION"
+                fi
                 ;;
             --clear-databases)
                 clear_databases
@@ -541,7 +901,7 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                die "Unknown option: $1\nUse --help for usage information"
+                die "$WULFUP_EXIT_ERROR" "Unknown option: $1\nUse --help for usage information"
                 ;;
         esac
         shift
@@ -555,19 +915,19 @@ parse_args() {
 main() {
     # Check if running as root
     if [[ $EUID -eq 0 ]]; then
-        die "Do not run this script as root. It will use sudo when needed."
+        die "$WULFUP_EXIT_ERROR" "Do not run this script as root. It will use sudo when needed."
     fi
 
     # Check if sudo is available
     if ! command -v sudo &>/dev/null; then
-        die "sudo is required but not found"
+        die "$WULFUP_EXIT_ERROR" "sudo is required but not found"
     fi
 
-    # Parse arguments
+    load_config
     parse_args "$@"
 
-    # Auto-detect AUR helper if not specified
-    if [[ -z "$AUR_HELPER" ]]; then
+    # Auto-detect AUR helper on Linux if not specified
+    if [[ "$PLATFORM" == "linux" && -z "$AUR_HELPER" ]]; then
         if detect_aur_helper; then
             info "Detected AUR helper: $AUR_HELPER"
         else

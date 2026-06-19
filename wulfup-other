@@ -1,118 +1,146 @@
 #!/usr/bin/env bash
 
 # wulfup-other - Additional update commands for non-pacman packages
-# This script is called by wulfup when --other-updates is used
+# This script is called by wulfup when --other is used
 
 set -euo pipefail
 
-# Color definitions (matching main wulfup script)
-if [[ -t 2 ]]; then
-    GREEN='\e[0;32m'
-    BLUE='\e[0;34m'
-    YELLOW='\e[0;33m'
-    RED='\e[0;31m'
-    BOLD='\e[1m'
-    RESET='\e[0m'
-else
-    GREEN='' BLUE='' YELLOW='' RED='' BOLD='' RESET=''
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for _wulfup_lib in "${SCRIPT_DIR}/wulfup-lib.sh" "/usr/lib/wulfup/wulfup-lib.sh"; do
+    if [[ -f "$_wulfup_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$_wulfup_lib"
+        break
+    fi
+done
+unset _wulfup_lib
+[[ -n "${WULFUP_LIB_LOADED:-}" ]] || { echo "wulfup-lib.sh not found" >&2; exit 1; }
 
-# Output functions
-info() {
-    echo -e "${BLUE}${BOLD}==>${RESET} ${BOLD}$*${RESET}" >&2
-}
+# Updater toggles (override in ~/.config/wulfup/config)
+WULFUP_OTHER_HBLOCK="${WULFUP_OTHER_HBLOCK:-yes}"
+WULFUP_OTHER_FLATPAK="${WULFUP_OTHER_FLATPAK:-yes}"
+WULFUP_OTHER_SNAP="${WULFUP_OTHER_SNAP:-yes}"
+WULFUP_OTHER_DOOM="${WULFUP_OTHER_DOOM:-yes}"
+WULFUP_OTHER_LAZY_NVIM="${WULFUP_OTHER_LAZY_NVIM:-yes}"
+WULFUP_OTHER_RUST="${WULFUP_OTHER_RUST:-yes}"
+WULFUP_OTHER_NPM="${WULFUP_OTHER_NPM:-yes}"
+WULFUP_OTHER_PIPX="${WULFUP_OTHER_PIPX:-yes}"
+WULFUP_OTHER_YAZI="${WULFUP_OTHER_YAZI:-yes}"
+WULFUP_OTHER_CARGO="${WULFUP_OTHER_CARGO:-yes}"
+WULFUP_OTHER_GO="${WULFUP_OTHER_GO:-yes}"
+WULFUP_OTHER_TLDR="${WULFUP_OTHER_TLDR:-yes}"
+WULFUP_OTHER_ANTIBODY="${WULFUP_OTHER_ANTIBODY:-yes}"
+WULFUP_OTHER_TMUX="${WULFUP_OTHER_TMUX:-yes}"
 
-success() {
-    echo -e "${GREEN}${BOLD}==>${RESET} ${GREEN}$*${RESET}" >&2
-}
+run_updater() {
+    local name="$1"
+    shift
 
-warn() {
-    echo -e "${YELLOW}${BOLD}==> WARNING:${RESET} ${YELLOW}$*${RESET}" >&2
-}
+    if "$@"; then
+        return 0
+    fi
 
-error() {
-    echo -e "${RED}${BOLD}==> ERROR:${RESET} ${RED}$*${RESET}" >&2
-}
-
-step() {
-    echo -e "${BLUE}${BOLD}::${RESET} $*" >&2
-}
-
-# Show command before running (transparent execution)
-run_cmd() {
-    echo -e "${GREEN}${BOLD}\$${RESET} $*" >&2
-    "$@"
-}
-
-run_sudo() {
-    echo -e "${GREEN}${BOLD}\$ sudo${RESET} $*" >&2
-    sudo "$@"
+    handle_failure "$name"
 }
 
 #==============================================================================
 # Update Functions
 #==============================================================================
 
+update_hblock() {
+    [[ "$WULFUP_OTHER_HBLOCK" == "yes" ]] || return 0
+
+    if ! command -v hblock &>/dev/null; then
+        return 0
+    fi
+
+    step "Updating hblock hosts file..."
+    run_sudo hblock
+}
+
 update_flatpak() {
+    [[ "$WULFUP_OTHER_FLATPAK" == "yes" ]] || return 0
+
     if ! command -v flatpak &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating Flatpak applications..."
 
-    # Check if any flatpaks are installed
     if [[ $(flatpak list 2>/dev/null | wc -l) -eq 0 ]]; then
         info "No Flatpak applications installed, skipping"
         return 0
     fi
 
-    run_cmd flatpak update -y || warn "Flatpak update failed"
+    run_cmd flatpak update -y
 }
 
 update_snap() {
+    [[ "$WULFUP_OTHER_SNAP" == "yes" ]] || return 0
+
     if ! command -v snap &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating Snap packages..."
 
-    # Check if any snaps are installed
     if [[ $(snap list 2>/dev/null | wc -l) -le 1 ]]; then
         info "No Snap packages installed, skipping"
         return 0
     fi
 
-    run_cmd sudo snap refresh || warn "Snap refresh failed"
+    run_sudo snap refresh
 }
 
 update_doom_emacs() {
+    [[ "$WULFUP_OTHER_DOOM" == "yes" ]] || return 0
+
     if ! command -v doom &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating Doom Emacs..."
-    run_cmd doom up || warn "Doom Emacs update failed"
+    run_cmd doom up
     step "Syncing Doom Emacs and updating packages..."
-    run_cmd doom sync -u || warn "Doom Emacs sync failed"
+    run_cmd doom sync -u
+}
+
+update_lazy_nvim() {
+    [[ "$WULFUP_OTHER_LAZY_NVIM" == "yes" ]] || return 0
+
+    if ! command -v nvim &>/dev/null; then
+        return 0
+    fi
+
+    local lazy_lock="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/lazy-lock.json"
+    if [[ ! -f "$lazy_lock" ]]; then
+        return 0
+    fi
+
+    step "Updating Neovim plugins via lazy.nvim..."
+    run_cmd nvim --headless "+Lazy! sync" +qa
 }
 
 update_rust() {
+    [[ "$WULFUP_OTHER_RUST" == "yes" ]] || return 0
+
     if ! command -v rustup &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating Rust toolchain..."
-    run_cmd rustup update || warn "Rust update failed"
+    run_cmd rustup update
 }
 
 update_npm_globals() {
+    [[ "$WULFUP_OTHER_NPM" == "yes" ]] || return 0
+
     if ! command -v npm &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating global npm packages..."
 
-    # Check if any global packages are installed
     local global_packages
     global_packages=$(npm list -g --depth=0 2>/dev/null | wc -l)
 
@@ -121,100 +149,139 @@ update_npm_globals() {
         return 0
     fi
 
-    run_sudo npm update -g || warn "npm global update failed"
+    local npm_prefix
+    npm_prefix=$(npm config get prefix 2>/dev/null || echo "")
+
+    if [[ -n "$npm_prefix" && -w "$npm_prefix" ]]; then
+        run_cmd npm update -g
+    elif [[ -n "$npm_prefix" && "$npm_prefix" == /usr* ]]; then
+        run_sudo npm update -g
+    else
+        run_cmd npm update -g
+    fi
 }
 
 update_pipx() {
+    [[ "$WULFUP_OTHER_PIPX" == "yes" ]] || return 0
+
     if ! command -v pipx &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
     step "Updating pipx packages..."
 
-    # Check if any pipx packages are installed
     if [[ $(pipx list 2>/dev/null | grep -c "package") -eq 0 ]]; then
         info "No pipx packages installed, skipping"
         return 0
     fi
 
-    run_cmd pipx upgrade-all || warn "pipx upgrade failed"
+    run_cmd pipx upgrade-all
 }
 
 update_cargo_packages() {
+    [[ "$WULFUP_OTHER_CARGO" == "yes" ]] || return 0
+
     if ! command -v cargo &>/dev/null || ! command -v cargo-install-update &>/dev/null; then
-        return 0  # Silently skip if cargo or cargo-update not installed
+        return 0
     fi
 
     step "Updating cargo-installed packages..."
-    run_cmd cargo install-update -a || warn "cargo update failed"
+    run_cmd cargo install-update -a
 }
 
 update_go_packages() {
+    [[ "$WULFUP_OTHER_GO" == "yes" ]] || return 0
+
     if ! command -v go &>/dev/null; then
-        return 0  # Silently skip if not installed
+        return 0
     fi
 
-    # Only if you use a tool like gup or have a list of go packages
-    # This is just a placeholder - customize as needed
     if command -v gup &>/dev/null; then
         step "Updating Go packages..."
-        run_cmd gup update || warn "Go package update failed"
+        run_cmd gup update
+    fi
+}
+
+update_tldr() {
+    [[ "$WULFUP_OTHER_TLDR" == "yes" ]] || return 0
+
+    if ! command -v tldr &>/dev/null; then
+        return 0
+    fi
+
+    step "Updating tldr cache..."
+    run_cmd tldr --update
+}
+
+update_antibody() {
+    [[ "$WULFUP_OTHER_ANTIBODY" == "yes" ]] || return 0
+
+    if ! command -v antibody &>/dev/null; then
+        return 0
+    fi
+
+    if [[ -f "$HOME/.zsh_plugins.txt" ]]; then
+        step "Updating antibody plugins..."
+        run_cmd antibody update
+    fi
+}
+
+update_tmux_plugins() {
+    [[ "$WULFUP_OTHER_TMUX" == "yes" ]] || return 0
+
+    if ! command -v tmux &>/dev/null; then
+        return 0
+    fi
+
+    local tpm_path="$HOME/.tmux/plugins/tpm"
+    if [[ -d "$tpm_path" ]]; then
+        step "Updating tmux plugins..."
+        run_cmd "$tpm_path/bin/update_plugins" all
     fi
 }
 
 update_yazi_plugins() {
+    [[ "$WULFUP_OTHER_YAZI" == "yes" ]] || return 0
+
     if ! command -v ya &>/dev/null; then
-        return 0  # Silently skip if not installed
-    fi
-
-    step "Updating yazi plugins..."
-    run_cmd ya pkg upgrade || warn "yazi plugin update failed"
-}
-
-update_astronvim() {
-    if ! command -v nvim &>/dev/null; then
-        return 0  # Silently skip if not installed
-    fi
-
-    # Check for lazy.nvim lockfile as a proxy for lazy-managed config
-    local lazy_lock="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/lazy-lock.json"
-    if [[ ! -f "$lazy_lock" ]]; then
         return 0
     fi
 
-    step "Updating AstroNvim plugins via lazy.nvim..."
-    # Lazy! (with bang) runs sync non-interactively; +qa exits cleanly
-    run_cmd nvim --headless "+Lazy! sync" +qa || warn "AstroNvim/lazy.nvim update failed"
-   }
+    step "Updating yazi plugins..."
+    run_cmd ya pkg upgrade
+}
 
-# Add more update functions here as needed
 #==============================================================================
 # Main execution
 #==============================================================================
 
 main() {
+    load_config
+
     info "Running additional package updates..."
     echo
 
-    # Call update functions - only runs if the tool is installed
-    update_flatpak
-    update_snap
-    update_doom_emacs
-    update_astronvim
-    update_rust
-    update_npm_globals
-    update_pipx
-    update_yazi_plugins
-    update_cargo_packages
-    update_go_packages
-
-    # Uncomment or add more as needed:
-    # update_rust
-    # update_npm_globals
-    # update_pipx
+    run_updater "hblock" update_hblock
+    run_updater "flatpak" update_flatpak
+    run_updater "snap" update_snap
+    run_updater "doom-emacs" update_doom_emacs
+    run_updater "lazy.nvim" update_lazy_nvim
+    run_updater "rust" update_rust
+    run_updater "npm" update_npm_globals
+    run_updater "pipx" update_pipx
+    run_updater "yazi" update_yazi_plugins
+    run_updater "cargo" update_cargo_packages
+    run_updater "go" update_go_packages
+    run_updater "tldr" update_tldr
+    run_updater "antibody" update_antibody
+    run_updater "tmux" update_tmux_plugins
 
     echo
-    success "Additional updates complete"
+    if report_failures; then
+        success "Additional updates complete"
+    else
+        die "$WULFUP_EXIT_ERROR" "Additional updates finished with errors"
+    fi
 }
 
 main "$@"
