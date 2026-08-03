@@ -31,6 +31,8 @@ WULFUP_OTHER_GO="${WULFUP_OTHER_GO:-yes}"
 WULFUP_OTHER_TLDR="${WULFUP_OTHER_TLDR:-yes}"
 WULFUP_OTHER_ANTIBODY="${WULFUP_OTHER_ANTIBODY:-yes}"
 WULFUP_OTHER_TMUX="${WULFUP_OTHER_TMUX:-yes}"
+WULFUP_OTHER_PACSTALL="${WULFUP_OTHER_PACSTALL:-yes}"
+WULFUP_OTHER_APPIMAGE="${WULFUP_OTHER_APPIMAGE:-yes}"
 
 run_updater() {
     local name="$1"
@@ -90,6 +92,44 @@ update_snap() {
     fi
 
     run_sudo snap refresh
+}
+
+update_pacstall() {
+    [[ "$WULFUP_OTHER_PACSTALL" == "yes" ]] || return 0
+
+    if ! command -v pacstall &>/dev/null; then
+        return 0
+    fi
+
+    step "Updating Pacstall packages..."
+    run_cmd pacstall -Up
+    run_cmd pacstall -U
+}
+
+update_appimage() {
+    [[ "$WULFUP_OTHER_APPIMAGE" == "yes" ]] || return 0
+
+    if ! command -v appimageupdatetool &>/dev/null; then
+        return 0
+    fi
+
+    local appimage_dir="$HOME/Applications"
+    if [[ ! -d "$appimage_dir" ]]; then
+        return 0
+    fi
+
+    step "Checking for AppImage updates..."
+
+    local found=0
+    while IFS= read -r -d '' appimage; do
+        found=1
+        info "Updating $(basename "$appimage")..."
+        run_cmd appimageupdatetool "$appimage"
+    done < <(find "$appimage_dir" -name '*.AppImage' -print0 2>/dev/null)
+
+    if [[ $found -eq 0 ]]; then
+        info "No AppImages found in $appimage_dir"
+    fi
 }
 
 update_doom_emacs() {
@@ -264,6 +304,8 @@ main() {
     run_updater "hblock" update_hblock
     run_updater "flatpak" update_flatpak
     run_updater "snap" update_snap
+    run_updater "pacstall" update_pacstall
+    run_updater "appimage" update_appimage
     run_updater "doom-emacs" update_doom_emacs
     run_updater "lazy.nvim" update_lazy_nvim
     run_updater "rust" update_rust

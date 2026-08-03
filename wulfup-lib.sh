@@ -13,6 +13,7 @@ readonly WULFUP_EXIT_ABORTED=3
 AUTO_YES="${AUTO_YES:-no}"
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-no}"
 PACMAN_NOCONFIRM="${PACMAN_NOCONFIRM:-no}"
+SEND_NOTIFICATION="${SEND_NOTIFICATION:-no}"
 FAILURES=()
 
 # Color definitions
@@ -146,4 +147,27 @@ report_failures() {
         echo "  - $failure" >&2
     done
     return 1
+}
+
+#==============================================================================
+# Desktop notifications (cross-platform)
+#==============================================================================
+
+send_desktop_notification() {
+    local title="${1:-System Update Complete}"
+    local message="${2:-Update finished}"
+
+    if [[ "$SEND_NOTIFICATION" == "no" ]]; then
+        return 0
+    fi
+
+    if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+        return 0
+    fi
+
+    if ! command -v notify-send &>/dev/null; then
+        return 0
+    fi
+
+    run_cmd notify-send "$title" "$message" --icon=software-update-available || true
 }
