@@ -15,13 +15,21 @@
 #             num    0-9              upper  A-Z only
 #             sym    !@#$%^&* etc     alnum  alpha + num
 #                                     all    alpha + num + sym (the default)
-#   -k        key mode: 32 characters, alnum (same as -t alnum -l 32)
+#   -k        key mode: 32 characters, alnum (same as -t alnum -l 32); an
+#             explicit -t or -l overrides the matching half
 #   -s        drop symbols from whatever set is in play
 #   -n COUNT  generate COUNT passwords (default 1)
 #   -c        copy to the clipboard instead of printing
 #   -p NAME   store in pass under NAME instead of printing
 #   -f        force overwrite of an existing pass entry
 #   -h        show this help
+#
+# Requires bash 3.2 or newer: macOS still ships the frozen 3.2 as /bin/bash, so
+# nothing here uses mapfile, associative arrays or other bash 4 features. Keep
+# it that way. Also needs /dev/urandom and tr, head and awk in either GNU or
+# BSD flavour; -c additionally needs pbcopy, xclip or wl-copy, and -p needs
+# pass. Verified on Linux (bash 5.3, GNU coreutils, Wayland) and on macOS
+# (stock bash 3.2, BSD coreutils, pbcopy).
 #
 # Every selected class is guaranteed to appear at least once, so -l must be at
 # least as large as the number of classes requested.
@@ -39,8 +47,8 @@ readonly MAX_TRIES=100
 readonly LOWER='a-z'
 readonly UPPER='A-Z'
 readonly DIGIT='0-9'
-# '-' is last so tr reads it as a literal rather than a range; this is always
-# appended last when the charset is assembled, which keeps that true.
+# '-' is last so tr reads it as a literal rather than a range. $SYMBOL is also
+# appended last when CHARSET is built, which keeps '-' in that position.
 readonly SYMBOL='!@#$%^&*()_=+[]{};:,.<>?/~-'
 
 length=$DEFAULT_LEN
@@ -113,8 +121,9 @@ random_string() {
     printf '%s' "$out"
 }
 
-# Make sure the password actually spans every class it is allowed to use,
-# instead of handing back 12 lowercase letters once in a while.
+# Make sure the password actually spans every class that was selected, instead
+# of a default run happening to come back all lowercase. With a single class
+# (-t num, say) there is nothing to enforce and the first draw is returned.
 gen_password() {
     local try pw class ok
     for (( try = 0; try < MAX_TRIES; try++ )); do
@@ -195,7 +204,9 @@ while getopts ':l:8t:ksn:cp:fh' opt; do
 done
 shift $(( OPTIND - 1 ))
 
-# -t wins outright; otherwise -k/-s mean alnum and a bare invocation means all.
+# -t decides the character set outright; -k and -s only supply one when no -t
+# was given, and a bare invocation means all. -k's other half is the length,
+# which still applies unless -l set it -- so `-t sym -k` is 32 symbols.
 if (( ! type_given )); then
     if (( key_mode || drop_symbols )); then select_alnum; else select_all; fi
 fi
@@ -203,8 +214,8 @@ if (( key_mode && ! len_given )); then length=$KEY_LEN; fi
 if (( drop_symbols )); then sel_sym=0; fi
 
 # CLASSES drives the "every class appears" check, CHARSET feeds tr. Built in
-# one pass so the two can never disagree. No mapfile: it is bash 4.0+, and
-# macOS still ships bash 3.2 as /bin/bash.
+# one pass so the two can never disagree, and without mapfile -- see the bash
+# 3.2 note at the top.
 CLASSES=()
 CHARSET=''
 if (( sel_lower )); then CLASSES+=(lower); CHARSET+=$LOWER; fi
