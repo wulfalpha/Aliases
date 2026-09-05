@@ -3,7 +3,7 @@
 # gen-pass.sh - generate a random password from /dev/urandom
 #
 # Prints to stdout by default, so it pipes cleanly. Can also copy to the
-# clipboard (xclip or wl-copy) and/or store the password in `pass`.
+# clipboard (pbcopy, xclip or wl-copy) and/or store the password in `pass`.
 #
 # Usage:
 #   gen-pass.sh [-l LEN] [-8] [-t TYPE] [-k] [-s] [-n COUNT] [-c] [-p NAME] [-f] [-h]
@@ -91,27 +91,6 @@ add_types() {
     type_given=1
 }
 
-# Names of the classes in play, in charset order. Used for both building the
-# charset and checking that each one landed in the password.
-selected_classes() {
-    (( sel_lower )) && printf 'lower\n'
-    (( sel_upper )) && printf 'upper\n'
-    (( sel_digit )) && printf 'digit\n'
-    (( sel_sym ))   && printf 'sym\n'
-    return 0
-}
-
-build_charset() {
-    local out=''
-    (( sel_lower )) && out+=$LOWER
-    (( sel_upper )) && out+=$UPPER
-    (( sel_digit )) && out+=$DIGIT
-    # Appended last: $SYMBOL ends in '-', which tr only reads as a literal
-    # when it is the final character of the set.
-    (( sel_sym )) && out+=$SYMBOL
-    printf '%s' "$out"
-}
-
 has_class() {
     local class=$1 pw=$2
     case $class in
@@ -153,23 +132,49 @@ gen_password() {
     die "gave up after $MAX_TRIES tries covering ${#CLASSES[@]} classes at length $length"
 }
 
-copy_to_clipboard() {
-    local pw=$1
+# Names the clipboard tool to use, or fails if there is none. Single source of
+# truth: both the prereq check and the copy itself go through this.
+clipboard_cmd() {
+    # WAYLAND_DISPLAY first -- on a Wayland session xclip may exist via XWayland
+    # but write to a selection nothing reads.
     if [[ -n ${WAYLAND_DISPLAY:-} ]] && command -v wl-copy &> /dev/null; then
-        printf '%s' "$pw" | wl-copy
+        printf 'wl-copy'
+    elif command -v pbcopy &> /dev/null; then
+        printf 'pbcopy'
     elif command -v xclip &> /dev/null; then
-        printf '%s' "$pw" | xclip -selection clipboard
+        printf 'xclip'
     elif command -v wl-copy &> /dev/null; then
-        printf '%s' "$pw" | wl-copy
+        printf 'wl-copy'
     else
-        die "no clipboard tool found (install xclip or wl-clipboard)"
+        return 1
     fi
 }
 
+# stdout and stderr are sent to /dev/null because xclip and wl-copy fork a
+# daemon to own the selection, and that daemon inherits our fds. Left attached,
+# it holds the write end of the pipe open forever and `gen-pass.sh -c | ...`
+# hangs. pbcopy exits cleanly, so this only matters on Linux -- but it has to
+# be here or the documented `-c | tee` usage deadlocks.
+copy_to_clipboard() {
+    local pw=$1 tool
+    tool=$(clipboard_cmd) || die "no clipboard tool found (need pbcopy, xclip or wl-copy)"
+    case $tool in
+        xclip) printf '%s' "$pw" | xclip -selection clipboard > /dev/null 2>&1 ;;
+        *)     printf '%s' "$pw" | "$tool" > /dev/null 2>&1 ;;
+    esac
+}
+
+# pass cannot prompt about an overwrite here: its yesno helper starts with
+# `[[ -t 0 ]] || return 0`, so a password arriving on a pipe auto-answers yes.
+# The existence check therefore has to happen on this side of the pipe.
+pass_entry_exists() {
+    local dir=${PASSWORD_STORE_DIR:-$HOME/.password-store}
+    [[ -e ${dir%/}/$1.gpg ]]
+}
+
 store_in_pass() {
-    local pw=$1 name=$2 args=(insert --multiline)
-    if (( force )); then args+=(--force); fi
-    printf '%s\n' "$pw" | pass "${args[@]}" "$name" > /dev/null
+    local pw=$1 name=$2
+    printf '%s\n' "$pw" | pass insert --multiline --force "$name" > /dev/null
 }
 
 while getopts ':l:8t:ksn:cp:fh' opt; do
@@ -197,10 +202,20 @@ fi
 if (( key_mode && ! len_given )); then length=$KEY_LEN; fi
 if (( drop_symbols )); then sel_sym=0; fi
 
-mapfile -t CLASSES < <(selected_classes)
+# CLASSES drives the "every class appears" check, CHARSET feeds tr. Built in
+# one pass so the two can never disagree. No mapfile: it is bash 4.0+, and
+# macOS still ships bash 3.2 as /bin/bash.
+CLASSES=()
+CHARSET=''
+if (( sel_lower )); then CLASSES+=(lower); CHARSET+=$LOWER; fi
+if (( sel_upper )); then CLASSES+=(upper); CHARSET+=$UPPER; fi
+if (( sel_digit )); then CLASSES+=(digit); CHARSET+=$DIGIT; fi
+# Symbols go last: $SYMBOL ends in '-', which tr reads as a literal only when
+# it is the final character of the set.
+if (( sel_sym )); then CLASSES+=(sym); CHARSET+=$SYMBOL; fi
+
 (( ${#CLASSES[@]} > 0 )) || die "no character classes left to choose from"
-CHARSET=$(build_charset)
-readonly CLASSES CHARSET
+readonly CHARSET
 
 [[ $length =~ ^[0-9]+$ ]] || die "length must be a number, got '$length'"
 [[ $count =~ ^[0-9]+$ ]] || die "count must be a number, got '$count'"
@@ -214,10 +229,13 @@ fi
 if [[ -n $pass_name ]]; then
     command -v pass &> /dev/null || die "pass could not be found"
     (( count == 1 )) || die "-p stores a single password; drop -n"
+    # Checked before generating, so a refusal costs nothing.
+    if (( ! force )) && pass_entry_exists "$pass_name"; then
+        die "pass entry '$pass_name' already exists; use -f to overwrite"
+    fi
 fi
 if (( to_clipboard )); then
-    command -v xclip &> /dev/null || command -v wl-copy &> /dev/null \
-        || die "xclip or wl-copy could not be found"
+    clipboard_cmd > /dev/null || die "no clipboard tool found (need pbcopy, xclip or wl-copy)"
     (( count == 1 )) || die "-c copies a single password; drop -n"
 fi
 
